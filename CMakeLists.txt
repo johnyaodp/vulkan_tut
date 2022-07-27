@@ -50,15 +50,15 @@ else()
 endif()
 
 
-add_subdirectory(1stTriangle)
-
 #___________________________________________________________________________________________________
 #add_subdirectory(precompiled)
 #include(put_symbols_on_symbol_server)
 
+include_directories("C:/VulkanSDK/1.3.216.0/Include")
+include_directories("C:/GL/glfw/include")
+include_directories("C:/GL/glm")
 
 #target_include_directories
-#include_directories
 #target_link_libraries
 #set_target_properties( ${PROJECT_NAME}
 #     PROPERTIES
@@ -87,4 +87,6 @@ add_subdirectory(1stTriangle)
   )
 ]]
 
+
+add_subdirectory(1stTriangle)
 

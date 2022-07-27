@@ -13,8 +13,8 @@ target_sources(
    PRIVATE
       main.cpp)
       
-#[[target_link_libraries(
+target_link_libraries(
    1stTriangle
    PRIVATE
-      glfw) ]]
+      "C:/GL/glfw/out/build/x64-Debug/src/glfw3.lib")
 
