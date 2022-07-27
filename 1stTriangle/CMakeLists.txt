@@ -16,5 +16,6 @@ target_sources(
 target_link_libraries(
    1stTriangle
    PRIVATE
-      "C:/GL/glfw/out/build/x64-Debug/src/glfw3.lib")
+      "C:/GL/glfw/out/build/x64-Debug/src/glfw3.lib"
+      "C:/VulkanSDK/1.3.216.0/Lib/vulkan-1.lib")
 
