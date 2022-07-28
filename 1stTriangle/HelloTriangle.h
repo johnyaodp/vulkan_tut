@@ -29,6 +29,8 @@ private:
 
    void cleanup();
 
+   void createLogicalDevice();
+
    void pickPhysicalDevice();
 
    virtual bool isDeviceSuitable(VkPhysicalDevice device);
@@ -57,4 +59,7 @@ private:
    VkInstance instance = nullptr;
    VkDebugUtilsMessengerEXT debugMessenger = nullptr;
    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+   VkDevice device;
+
+   VkQueue graphicsQueue;
 };
