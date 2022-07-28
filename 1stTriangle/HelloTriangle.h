@@ -3,9 +3,11 @@
 #include <vector>
 #include <optional>
 
+#define VK_USE_PLATFORM_WIN32_KHR
 #define GLFW_INCLUDE_VULKAN
-
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 
 extern const bool enableValidationLayers;
 
@@ -17,9 +19,10 @@ void DestroyDebugUtilsMessengerEXT(
 
 struct QueueFamilyIndices {
    std::optional<uint32_t> graphicsFamily;
+   std::optional<uint32_t> presentFamily;
 
    bool isComplete() {
-      return graphicsFamily.has_value();
+      return graphicsFamily.has_value() && presentFamily.has_value();
    }
 };
 
@@ -39,6 +42,7 @@ private:
    void initVulkan() {
       createInstance();
       setupDebugMessenger();
+      createSurface();
       pickPhysicalDevice();
       createLogicalDevice();
    }
@@ -56,6 +60,8 @@ private:
          DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
       }
 
+      vkDestroySurfaceKHR(instance, surface, nullptr);
+
       vkDestroyInstance(instance, nullptr);
 
       glfwDestroyWindow(window);
@@ -65,6 +71,8 @@ private:
    }
 
    //____________________________________________________________________________
+
+   void createSurface();
 
    void createLogicalDevice();
 
@@ -99,4 +107,7 @@ private:
    VkDevice device;
 
    VkQueue graphicsQueue;
+
+   VkSurfaceKHR surface;
+   VkQueue presentQueue;
 };
