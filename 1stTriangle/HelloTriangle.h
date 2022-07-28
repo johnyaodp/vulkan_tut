@@ -26,6 +26,12 @@ struct QueueFamilyIndices {
    }
 };
 
+struct SwapChainSupportDetails {
+   VkSurfaceCapabilitiesKHR capabilities;
+   std::vector<VkSurfaceFormatKHR> formats;
+   std::vector<VkPresentModeKHR> presentModes;
+};
+
 
 class HelloTriangleApplication {
 public:
@@ -45,6 +51,7 @@ private:
       createSurface();
       pickPhysicalDevice();
       createLogicalDevice();
+      createSwapChain();
    }
 
    void mainLoop() {
@@ -76,9 +83,17 @@ private:
 
    void createLogicalDevice();
 
+   void createSwapChain();
+   VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+   VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+   VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+   SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
+
+
    void pickPhysicalDevice();
 
    virtual bool isDeviceSuitable(VkPhysicalDevice device);
+   virtual bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 
    auto findQueueFamilies(VkPhysicalDevice device) -> QueueFamilyIndices;
 
@@ -110,4 +125,10 @@ private:
 
    VkSurfaceKHR surface;
    VkQueue presentQueue;
+
+   VkSwapchainKHR swapChain;
+   std::vector<VkImage> swapChainImages;
+   VkFormat swapChainImageFormat;
+   VkExtent2D swapChainExtent;
+
 };
