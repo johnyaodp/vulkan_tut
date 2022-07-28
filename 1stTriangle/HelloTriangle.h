@@ -7,6 +7,14 @@
 
 #include <GLFW/glfw3.h>
 
+extern const bool enableValidationLayers;
+
+void DestroyDebugUtilsMessengerEXT(
+   VkInstance instance,
+   VkDebugUtilsMessengerEXT debugMessenger,
+   const VkAllocationCallbacks* pAllocator);
+
+
 struct QueueFamilyIndices {
    std::optional<uint32_t> graphicsFamily;
 
@@ -18,16 +26,45 @@ struct QueueFamilyIndices {
 
 class HelloTriangleApplication {
 public:
-   virtual void run();
+   virtual void run() {
+      initWindow();
+      initVulkan();
+      mainLoop();
+      cleanup();
+   }
 
 private:
    void initWindow();
 
-   void initVulkan();
+   void initVulkan() {
+      createInstance();
+      setupDebugMessenger();
+      pickPhysicalDevice();
+      createLogicalDevice();
+   }
 
-   void mainLoop();
+   void mainLoop() {
+      while (!glfwWindowShouldClose(window)) {
+         glfwPollEvents();
+      }
+   }
 
-   void cleanup();
+   void cleanup() {
+      vkDestroyDevice(device, nullptr);
+
+      if (enableValidationLayers) {
+         DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+      }
+
+      vkDestroyInstance(instance, nullptr);
+
+      glfwDestroyWindow(window);
+
+      glfwTerminate();
+
+   }
+
+   //____________________________________________________________________________
 
    void createLogicalDevice();
 

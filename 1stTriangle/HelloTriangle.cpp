@@ -53,50 +53,16 @@ void DestroyDebugUtilsMessengerEXT(
    }
 }
 
-void HelloTriangleApplication::run() {
-   initWindow();
-   initVulkan();
-   mainLoop();
-   cleanup();
-}
-
-auto HelloTriangleApplication::initWindow()
--> void
-{
+void HelloTriangleApplication::initWindow() {
    glfwInit();
 
    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
 }
 
-void HelloTriangleApplication::initVulkan() {
-   createInstance();
-   setupDebugMessenger();
-   pickPhysicalDevice();
-   createLogicalDevice();
-}
-
-void HelloTriangleApplication::mainLoop() {
-   while (!glfwWindowShouldClose(window)) {
-      glfwPollEvents();
-   }
-}
-
-void HelloTriangleApplication::cleanup() {
-   vkDestroyDevice(device, nullptr);
-
-   if (enableValidationLayers) {
-      DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-   }
-
-   vkDestroyInstance(instance, nullptr);
-
-   glfwDestroyWindow(window);
-
-   glfwTerminate();
-}
 
 
 void HelloTriangleApplication::pickPhysicalDevice() {
