@@ -5,18 +5,19 @@
 #
 # vulkan_composition Executable
 #
+message(STATUS "Hello")
 
-add_executable(1stTriangle "")
+add_executable(Triangle "")
 
 target_sources(
-   1stTriangle
+   Triangle
    PRIVATE
       HelloTriangle.h
       HelloTriangle.cpp
       main.cpp)
       
 target_link_libraries(
-   1stTriangle
+   Triangle
    PRIVATE
       "C:/GL/glfw/out/build/x64-Debug/src/glfw3.lib"
       "C:/VulkanSDK/1.3.216.0/Lib/vulkan-1.lib")

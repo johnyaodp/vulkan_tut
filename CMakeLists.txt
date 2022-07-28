@@ -27,45 +27,6 @@
             \-> C++ CMake tools for Windows
 
 ]]
-cmake_minimum_required(VERSION 3.15)
-
-
-
-#___________________________________________________________________________________________________
-project(VulkanSelfTraining
-   VERSION 0.1
-   DESCRIPTION "Vulkan self training for Next Generation Graphics Project"
-   LANGUAGES CXX C)
-
-#___________________________________________________________________________________________________
-option(BUILD_APPS "Builds the apps subfolder" ON)
-
-
-if (MSVC)
-    # warning level 4 and all warnings as errors
-    add_compile_options(/W4 /WX)
-else()
-    # lots of warnings and all warnings as errors
-    add_compile_options(-Wall -Wextra -pedantic -Werror)
-endif()
-
-
-#___________________________________________________________________________________________________
-#add_subdirectory(precompiled)
-#include(put_symbols_on_symbol_server)
-
-include_directories("C:/VulkanSDK/1.3.216.0/Include")
-include_directories("C:/GL/glfw/include")
-include_directories("C:/GL/glm")
-
-#target_include_directories
-#target_link_libraries
-#set_target_properties( ${PROJECT_NAME}
-#     PROPERTIES
-#     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
-#     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
-#     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
-#)
 
 #[[
   set(PROJECT_NAME MyProject)
@@ -87,6 +48,36 @@ include_directories("C:/GL/glm")
   )
 ]]
 
+cmake_minimum_required(VERSION 3.15)
 
+#___________________________________________________________________________________________________
+project(VulkanSelfTraining
+   VERSION 0.1
+   DESCRIPTION "Vulkan self training for Next Generation Graphics Project"
+   LANGUAGES CXX C)
+
+#___________________________________________________________________________________________________
+#option(BUILD_APPS "Builds the apps subfolder" ON)
+
+if (MSVC)
+    # warning level 4 and all warnings as errors
+    add_compile_options(/W4 /WX)
+   #target_compile_options(
+   #   ${_target}
+   #   PRIVATE
+   #      /W4
+   #      /WX)
+ else()
+    # lots of warnings and all warnings as errors
+    add_compile_options(-Wall -Wextra -pedantic -Werror)
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include_directories("C:/VulkanSDK/1.3.216.0/Include")
+include_directories("C:/GL/glfw/include")
+include_directories("C:/GL/glm")
+
+#___________________________________________________________________________________________________
 add_subdirectory(1stTriangle)
-
