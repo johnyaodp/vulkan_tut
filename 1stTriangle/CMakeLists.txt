@@ -11,6 +11,8 @@ add_executable(1stTriangle "")
 target_sources(
    1stTriangle
    PRIVATE
+      HelloTriangle.h
+      HelloTriangle.cpp
       main.cpp)
       
 target_link_libraries(
