@@ -52,6 +52,7 @@ private:
       pickPhysicalDevice();
       createLogicalDevice();
       createSwapChain();
+      createImageViews();
    }
 
    void mainLoop() {
@@ -61,6 +62,11 @@ private:
    }
 
    void cleanup() {
+
+      for (auto imageView : swapChainImageViews) {
+         vkDestroyImageView(device, imageView, nullptr);
+      }
+
       vkDestroyDevice(device, nullptr);
 
       if (enableValidationLayers) {
@@ -78,6 +84,7 @@ private:
    }
 
    //____________________________________________________________________________
+   void createImageViews();
 
    void createSurface();
 
@@ -130,5 +137,6 @@ private:
    std::vector<VkImage> swapChainImages;
    VkFormat swapChainImageFormat;
    VkExtent2D swapChainExtent;
+   std::vector<VkImageView> swapChainImageViews;
 
 };

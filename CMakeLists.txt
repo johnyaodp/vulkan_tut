@@ -81,3 +81,4 @@ include_directories("C:/GL/glm")
 
 #___________________________________________________________________________________________________
 add_subdirectory(1stTriangle)
+add_subdirectory(nggTriangle)
