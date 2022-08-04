@@ -55,6 +55,8 @@ void vulkan_wrapper::init_vulkan(
    create_image_views();
    create_render_pass();
    create_graphics_pipeline();
+
+   create_framebuffers();
 }
 
 void vulkan_wrapper::cleanup()
@@ -538,7 +540,7 @@ auto vulkan_wrapper::choose_swap_extent(
 
 void vulkan_wrapper::create_image_views()
 {
-   swapchain_image_views.resize(
+   swapchain_image_views.reserve(
       swapchain_images.size() );
 
    for ( const auto& swapchain_image : swapchain_images )
@@ -817,5 +819,36 @@ void vulkan_wrapper::create_render_pass()
       throw std::runtime_error( "failed to create render pass!" );
    }
 
-   render_pass = std::move(render_pass_result).value();
+   render_pass = std::move( render_pass_result ).value();
 }
+
+void vulkan_wrapper::create_framebuffers()
+{
+   swapchain_framebuffers.clear();
+   swapchain_framebuffers.reserve(swapchain_image_views.size());
+
+   for (auto& swapchain_image_view : swapchain_image_views) {
+      VkImageView attachments[] = {
+          *swapchain_image_view
+      };
+
+      VkFramebufferCreateInfo framebuffer_info{
+         .sType = get_sType<VkFramebufferCreateInfo>(),
+         .renderPass = render_pass.get(),
+         .attachmentCount = 1,
+         .pAttachments = attachments,
+         .width = swapchain_extent.width,
+         .height = swapchain_extent.height,
+         .layers = 1,
+      };
+
+      auto swapchain_framebuffer_result = logical_device->vkCreateFramebuffer(framebuffer_info);
+
+      if (swapchain_framebuffer_result.holds_error()) {
+         throw std::runtime_error("failed to create framebuffer!");
+      }
+
+      swapchain_framebuffers.emplace_back(std::move(swapchain_framebuffer_result).value());
+   }
+}
+

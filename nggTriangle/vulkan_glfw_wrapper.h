@@ -103,11 +103,13 @@ private:
 
    std::vector<datapath::vulkan_utils::VkPipeline_resource_t> graphics_pipeline;
 
+   std::vector<datapath::vulkan_utils::VkFramebuffer_resource_t> swapchain_framebuffers;
+
 
 #ifdef NDEBUG
    const bool enableValidationLayers = false;
 #else
-   const bool enableValidationLayers = false;
+   const bool enableValidationLayers = true;
 #endif
 
    // local functions
@@ -192,6 +194,8 @@ private:
 
    void create_render_pass();
 
+   void create_framebuffers();
+
    // Loading shader
    static
    auto read_file(
@@ -202,7 +206,8 @@ private:
       const std::vector<char>& code )
       -> VkShaderModule_resource_t;
 
-   // Render passes
+   // frame buffers
+
 
 
    // Debug messenger
@@ -218,3 +223,4 @@ private:
       void* pUserData )
       -> VkBool32;
 };
+
