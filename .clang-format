@@ -1,0 +1,11 @@
+---
+IndentWidth: '3'
+TabWidth: '3'
+UseTab: Never
+---
+Language: Cpp
+BasedOnStyle: datapathgraphics
+---
+Language: Proto
+DisableFormat: 'true'
+...

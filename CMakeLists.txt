@@ -75,9 +75,25 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include_directories("C:/VulkanSDK/1.3.216.0/Include")
-include_directories("C:/GL/glfw/include")
-include_directories("C:/GL/glm")
+
+message("CMAKE_SOURCE_DIR ${CMAKE_SOURCE_DIR}")
+#set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
+
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
+
+message("CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}")
+
+find_package(NextGenGraphics REQUIRED)
+
+set(VULKAN_SDK "C:/VulkanSDK/1.3.216.0")
+include_directories("${VULKAN_SDK}/Include")
+
+set(GLFW_PACKAGE "C:/GL/glfw")
+set(GLM_PACKAGE "C:/GL/glm")
+
+include_directories("${GLFW_PACKAGE}/include")
+include_directories("${GLM_PACKAGE}")
+
 
 #___________________________________________________________________________________________________
 add_subdirectory(1stTriangle)

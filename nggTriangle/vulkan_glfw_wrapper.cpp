@@ -1,0 +1,821 @@
+#include "vulkan_glfw_wrapper.h"
+
+using namespace datapath::vulkan_utils;
+
+#include <algorithm>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <set>
+#include <stdexcept>
+#include <vector>
+
+
+#pragma warning( disable : 4458 )
+
+
+const uint32_t WIDTH = 800;
+const uint32_t HEIGHT = 600;
+
+const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+
+const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+
+// Environment depdent code: Windows
+void vulkan_wrapper::init_window(
+   const char* title,
+   uint32_t width,
+   uint32_t height )
+{
+   glfwInit();
+
+   glfwWindowHint( GLFW_CLIENT_API, GLFW_NO_API );
+   glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
+
+   window = glfwCreateWindow( width, height, title, nullptr, nullptr );
+
+   // glfwSetWindowUserPointer(window, this);
+   // glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+}
+
+
+// Environment agnostic
+
+void vulkan_wrapper::init_vulkan(
+   const char* appname )
+{
+   create_instance( appname );
+   setup_debug_messenger();
+   create_surface();
+   pick_physical_device();
+   create_logical_device();
+   create_swap_chain();
+   create_image_views();
+   create_render_pass();
+   create_graphics_pipeline();
+}
+
+void vulkan_wrapper::cleanup()
+{
+   destroy_debug_messenger();
+
+   destroy_window();
+}
+
+void vulkan_wrapper::create_instance(
+   [[maybe_unused]] const char* app_name )
+{
+   if ( enableValidationLayers && !check_validation_layer_support() )
+   {
+      throw std::runtime_error( "validation layers requested, but not available!" );
+   }
+
+   std::string application_name( app_name );
+
+   vulkan_engine.initialise(
+      application_name,   //"Vulkan Datapath Tutorial", //app_name,
+      VK_MAKE_VERSION( 1, 0, 0 ),
+      get_required_instance_extensions() );
+}
+
+
+auto vulkan_wrapper::get_required_instance_extensions()
+   -> vk_used_extensions_t
+{
+   vk_used_extensions_t used_extensions{};
+   uint32_t glfw_used_vk_extensions_count{ 0 };
+
+   auto* glfw_used_vk_extensions_raw = glfwGetRequiredInstanceExtensions( &glfw_used_vk_extensions_count );
+
+   std::span<const char*> glfw_used_vk_extensions{
+      glfw_used_vk_extensions_raw,
+      glfw_used_vk_extensions_count };
+
+   for ( const auto* const glfw_used_vk_extension_name_string : glfw_used_vk_extensions )
+   {
+      used_extensions.add_extension( glfw_used_vk_extension_name_string );
+   }
+
+   // Add extra instance extension here
+   used_extensions.add_extension( "VK_KHR_surface" );
+
+   return used_extensions;
+}
+
+void vulkan_wrapper::create_surface()
+{
+   auto alloc_func =
+      [&]( VkSurfaceKHR* surface )
+      {
+         return
+            glfwCreateWindowSurface(
+               vulkan_engine.instance_handle(),
+               window,
+               vk_allocation_cb,
+               surface );
+      };
+
+   auto [window_surface, create_error_value] =
+      VkSurfaceKHR_resource_t::make(
+         alloc_func,
+         vulkan_engine.get_instance_dispatcher() );
+
+
+   if ( create_error_value != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to create window surface!" );
+   }
+
+   surface = std::move( window_surface );
+}
+
+void vulkan_wrapper::pick_physical_device()
+{
+   const auto& physical_devices{ vulkan_engine.physical_devices() };
+
+   if ( physical_devices.empty() )
+   {
+      throw std::runtime_error( "failed to find GPUs with Vulkan support!" );
+   }
+
+   physical_device.reset();
+
+   for ( const auto& device : physical_devices )
+   {
+      if ( is_device_suitable( device ) )
+      {
+         physical_device = device;
+         break;
+      }
+   }
+
+   if ( !physical_device.has_value() )
+   {
+      throw std::runtime_error( "failed to find a suitable GPU!" );
+   }
+}
+
+auto vulkan_wrapper::is_device_suitable(
+   const physical_device_wrapper_t& device )
+   -> bool
+{
+   QueueFamilyIndices indices = find_queue_families( device );
+
+   bool extensionsSupported = check_device_extension_support( device );
+
+   return indices.isComplete() && extensionsSupported;
+}
+
+auto vulkan_wrapper::check_device_extension_support(
+   const physical_device_wrapper_t& device )
+   -> bool
+{
+   std::optional<const std::string> layer_name{ std::nullopt };
+   auto available_extensions = device.vkEnumerateDeviceExtensionProperties( layer_name );
+
+   std::set<std::string> required_extensions(
+      deviceExtensions.begin(),
+      deviceExtensions.end() );
+
+   for ( const auto& extension : available_extensions )
+   {
+      required_extensions.erase( extension.extensionName );
+   }
+
+   return required_extensions.empty();
+}
+
+
+// Looks like something wrong here
+auto vulkan_wrapper::find_queue_families(
+   const physical_device_wrapper_t& device )
+   -> QueueFamilyIndices
+{
+   QueueFamilyIndices indices;
+
+   auto queue_families = device.vkGetPhysicalDeviceQueueFamilyProperties();
+
+   for ( uint32_t i = 0;
+         const auto& queueFamily : queue_families )
+   {
+      if ( queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT )
+      {
+         indices.graphicsFamily = i;
+      }
+
+      if ( device.vkGetPhysicalDeviceSurfaceSupportKHR( i, surface ) )
+      {
+         indices.presentFamily = i;
+      }
+
+      if ( indices.isComplete() )
+      {
+         break;
+      }
+
+      indices.reset();
+      ++i;
+   }
+
+   return indices;
+}
+
+void vulkan_wrapper::create_logical_device()
+{
+   if ( !physical_device.has_value() )
+   {
+      throw std::runtime_error( "Physical device has not been initialised!" );
+   }
+
+   QueueFamilyIndices indices = find_queue_families( *physical_device );
+
+   float queue_priority = 1.0f;
+   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+   std::set<uint32_t> unique_queue_families = { *indices.graphicsFamily, *indices.presentFamily };
+
+   for ( uint32_t queue_family : unique_queue_families )
+   {
+      queue_create_infos.emplace_back(
+         VkDeviceQueueCreateInfo{
+            .sType = get_sType<VkDeviceQueueCreateInfo>(),
+            .queueFamilyIndex = queue_family,
+            .queueCount = 1,
+            .pQueuePriorities = &queue_priority } );
+   }
+
+   VkPhysicalDeviceFeatures device_features{};
+
+   std::vector<const char*> c_device_extensions;
+   c_device_extensions.reserve(
+      deviceExtensions.size() );
+
+   for ( const auto& s : deviceExtensions )
+   {
+      c_device_extensions.push_back( s );
+   }
+
+   VkDeviceCreateInfo create_info{
+      .sType = get_sType<VkDeviceCreateInfo>(),
+      .queueCreateInfoCount = static_cast<uint32_t>( queue_create_infos.size() ),
+      .pQueueCreateInfos = queue_create_infos.data(),
+      .enabledLayerCount = 0,
+      .enabledExtensionCount = static_cast<uint32_t>( c_device_extensions.size() ),
+      .ppEnabledExtensionNames = c_device_extensions.data(),
+      .pEnabledFeatures = &device_features };
+
+   if ( enableValidationLayers )
+   {
+      create_info.enabledLayerCount = static_cast<uint32_t>( validationLayers.size() );
+      create_info.ppEnabledLayerNames = validationLayers.data();
+   }
+   else
+   {
+      create_info.enabledLayerCount = 0;
+   }
+
+   auto result = physical_device->vkCreateDevice( create_info );
+
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create logical device!" );
+   }
+   else
+   {
+      logical_device = result.value();
+      graphics_queue = result.value()->vkGetDeviceQueue( *indices.graphicsFamily, 0 );
+      present_queue = result.value()->vkGetDeviceQueue( *indices.presentFamily, 0 );
+   }
+}
+
+auto vulkan_wrapper::check_validation_layer_support()
+   -> bool
+{
+   auto available_layers = initial_dispatcher.vkEnumerateInstanceLayerProperties();
+
+   for ( const char* layerName : validationLayers )
+   {
+      bool layerFound = false;
+
+      for ( const auto& layerProperties : available_layers )
+      {
+         if ( strcmp( layerName, layerProperties.layerName ) == 0 )
+         {
+            layerFound = true;
+            break;
+         }
+      }
+
+      if ( !layerFound )
+      {
+         return false;
+      }
+   }
+
+   return true;
+}
+
+auto vulkan_wrapper::get_required_extensions()
+   -> std::vector<const char*>
+{
+   uint32_t glfwExtensionCount = 0;
+   const char** glfwExtensions;
+   glfwExtensions = glfwGetRequiredInstanceExtensions( &glfwExtensionCount );
+
+   std::vector<const char*> extensions( glfwExtensions, glfwExtensions + glfwExtensionCount );
+
+   if ( enableValidationLayers )
+   {
+      extensions.push_back( VK_EXT_DEBUG_UTILS_EXTENSION_NAME );
+   }
+
+   return extensions;
+}
+
+VKAPI_ATTR auto VKAPI_CALL vulkan_wrapper::debug_callback(
+   [[maybe_unused]] VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+   [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT messageType,
+   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+   [[maybe_unused]] void* pUserData )
+   -> VkBool32
+{
+   std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+   return VK_FALSE;
+}
+
+void vulkan_wrapper::populate_debug_messenger_create_info(
+   VkDebugUtilsMessengerCreateInfoEXT& createInfo )
+{
+   createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+   createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+   createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+   createInfo.pfnUserCallback = debug_callback;
+   createInfo.pUserData = this;   // Optional
+}
+
+void vulkan_wrapper::setup_debug_messenger()
+{
+   if ( !enableValidationLayers )
+   {
+      return;
+   }
+
+   VkDebugUtilsMessengerCreateInfoEXT create_info{};
+   populate_debug_messenger_create_info( create_info );
+
+   auto instance{ vulkan_engine.get_instance_dispatcher() };
+
+
+   auto result = instance->vkCreateDebugUtilsMessengerEXT( create_info );
+
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to set up debug messenger!" );
+   }
+   else
+   {
+      debug_messenger = std::move( result ).value();
+   }
+}
+
+void vulkan_wrapper::destroy_debug_messenger()
+{
+   if ( !enableValidationLayers || debug_messenger.empty() )
+   {
+      return;
+   }
+
+   auto instance{ vulkan_engine.get_instance_dispatcher() };
+
+   instance->vkDestroyDebugUtilsMessengerEXT( *debug_messenger );
+
+   debug_messenger.reset();
+}
+
+void vulkan_wrapper::create_swap_chain()
+{
+   SwapChainSupportDetails swap_chain_support = query_swapchain_support();
+
+   VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format( swap_chain_support.formats );
+   VkPresentModeKHR presentMode = choose_swap_present_mode( swap_chain_support.presentModes );
+   VkExtent2D extent = choose_swap_extent( swap_chain_support.capabilities );
+
+   uint32_t imageCount = swap_chain_support.capabilities.minImageCount + 1;
+   if ( swap_chain_support.capabilities.maxImageCount > 0 &&
+        imageCount > swap_chain_support.capabilities.maxImageCount )
+   {
+      imageCount = swap_chain_support.capabilities.maxImageCount;
+   }
+
+   VkSwapchainCreateInfoKHR create_info{};
+   create_info.sType =
+      get_sType<VkSwapchainCreateInfoKHR>();   // VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+   create_info.surface = surface;
+
+   create_info.minImageCount = imageCount;
+   create_info.imageFormat = surfaceFormat.format;
+   create_info.imageColorSpace = surfaceFormat.colorSpace;
+   create_info.imageExtent = extent;
+   create_info.imageArrayLayers = 1;
+   create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+   QueueFamilyIndices indices = find_queue_families( *physical_device );
+   uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+
+   if ( indices.graphicsFamily != indices.presentFamily )
+   {
+      create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+      create_info.queueFamilyIndexCount = 2;
+      create_info.pQueueFamilyIndices = queueFamilyIndices;
+   }
+   else
+   {
+      create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+      create_info.queueFamilyIndexCount = 0;
+      create_info.pQueueFamilyIndices = nullptr;
+   }
+
+   create_info.preTransform = swap_chain_support.capabilities.currentTransform;
+   create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+   create_info.presentMode = presentMode;
+   create_info.clipped = VK_TRUE;
+
+   create_info.oldSwapchain = VK_NULL_HANDLE;
+
+   auto result = logical_device->vkCreateSwapchainKHR( create_info );
+
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create swap chain!" );
+   }
+
+   swapchain = std::move( result ).value();
+   swapchain_images = logical_device->vkGetSwapchainImagesKHR( *swapchain );
+   swapchain_image_format = surfaceFormat.format;
+   swapchain_extent = extent;
+}
+
+
+auto vulkan_wrapper::query_swapchain_support()
+   -> SwapChainSupportDetails
+{
+   SwapChainSupportDetails details;
+
+   details.capabilities = physical_device->vkGetPhysicalDeviceSurfaceCapabilitiesKHR( *surface );
+   details.formats = physical_device->vkGetPhysicalDeviceSurfaceFormatsKHR( *surface );
+   details.presentModes = physical_device->vkGetPhysicalDeviceSurfacePresentModesKHR( *surface );
+
+   return details;
+}
+
+
+auto vulkan_wrapper::choose_swap_surface_format(
+   const std::vector<VkSurfaceFormatKHR>& availableFormats )
+   -> VkSurfaceFormatKHR
+{
+   for ( const auto& availableFormat : availableFormats )
+   {
+      if ( availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+           availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR )
+      {
+         return availableFormat;
+      }
+   }
+
+   return availableFormats[0];
+}
+
+auto vulkan_wrapper::choose_swap_present_mode(
+   const std::vector<VkPresentModeKHR>& availablePresentModes )
+   -> VkPresentModeKHR
+{
+   for ( const auto& availablePresentMode : availablePresentModes )
+   {
+      if ( availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR )
+      {
+         return availablePresentMode;
+      }
+   }
+
+   return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+auto vulkan_wrapper::choose_swap_extent(
+   const VkSurfaceCapabilitiesKHR& capabilities )
+   -> VkExtent2D
+{
+   if ( capabilities.currentExtent.width != UINT_MAX )
+   {   // std::numeric_limits<uint32_t>::max()) {
+      return capabilities.currentExtent;
+   }
+   else
+   {
+      int width, height;
+      glfwGetFramebufferSize( window, &width, &height );
+
+      VkExtent2D actualExtent = { static_cast<uint32_t>( width ), static_cast<uint32_t>( height ) };
+
+      actualExtent.width =
+         std::clamp(
+            actualExtent.width,
+            capabilities.minImageExtent.width,
+            capabilities.maxImageExtent.width );
+      actualExtent.height =
+         std::clamp(
+            actualExtent.height,
+            capabilities.minImageExtent.height,
+            capabilities.maxImageExtent.height );
+
+      return actualExtent;
+   }
+}
+
+void vulkan_wrapper::create_image_views()
+{
+   swapchain_image_views.resize(
+      swapchain_images.size() );
+
+   for ( const auto& swapchain_image : swapchain_images )
+   {
+      VkImageViewCreateInfo create_info{};
+      create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+      create_info.image = swapchain_image;
+      create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      create_info.format = swapchain_image_format;
+
+      create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+      create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      create_info.subresourceRange.baseMipLevel = 0;
+      create_info.subresourceRange.levelCount = 1;
+      create_info.subresourceRange.baseArrayLayer = 0;
+      create_info.subresourceRange.layerCount = 1;
+
+      auto result = logical_device->vkCreateImageView( create_info );
+
+      if ( result.holds_error() )
+      {
+         throw std::runtime_error( "failed to create image views!" );
+      }
+
+      swapchain_image_views.emplace_back(
+         std::move( result ).value() );
+   }
+}
+
+void vulkan_wrapper::create_graphics_pipeline()
+{
+   auto vert_shader_code = read_file( "shaders/vert.spv" );
+   auto frag_shader_code = read_file( "shaders/frag.spv" );
+
+   auto vert_shader_module = create_shader_module( vert_shader_code );
+   auto frag_shader_module = create_shader_module( frag_shader_code );
+
+   VkPipelineShaderStageCreateInfo vert_shader_stage_info{};
+   vert_shader_stage_info.sType = get_sType<VkPipelineShaderStageCreateInfo>();
+   vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+   vert_shader_stage_info.module = vert_shader_module.get();
+   vert_shader_stage_info.pName = "main";
+
+   VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
+   frag_shader_stage_info.sType = get_sType<VkPipelineShaderStageCreateInfo>();
+   frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+   frag_shader_stage_info.module = frag_shader_module.get();
+   frag_shader_stage_info.pName = "main";
+
+   std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{
+      vert_shader_stage_info,
+      frag_shader_stage_info };
+
+   // Dynamic state
+   std::vector<VkDynamicState> dynamic_states{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+
+   VkPipelineDynamicStateCreateInfo dynamic_state{};
+   dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamic_state.dynamicStateCount = static_cast<uint32_t>( dynamic_states.size() );
+   dynamic_state.pDynamicStates = dynamic_states.data();
+
+   // Vertex input
+   VkPipelineVertexInputStateCreateInfo vertex_input_info{
+      .sType = get_sType<VkPipelineVertexInputStateCreateInfo>(),
+      .vertexBindingDescriptionCount = 0,
+      .pVertexBindingDescriptions = nullptr,   // Optional
+      .vertexAttributeDescriptionCount = 0,
+      .pVertexAttributeDescriptions = nullptr };   // Optional
+
+   // Input assembly
+   VkPipelineInputAssemblyStateCreateInfo input_assembly{
+      .sType = get_sType<VkPipelineInputAssemblyStateCreateInfo>(),
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+      .primitiveRestartEnable = VK_FALSE };
+
+   // Viewports and scissors
+   VkViewport viewport{
+      .x = 0.0f,
+      .y = 0.0f,
+      .width = (float)swapchain_extent.width,
+      .height = (float)swapchain_extent.height,
+      .minDepth = 0.0f,
+      .maxDepth = 1.0f };
+
+   VkRect2D scissor{
+      .offset = { 0, 0 },
+      .extent = swapchain_extent };
+
+   VkPipelineViewportStateCreateInfo viewport_state{
+      .sType = get_sType<VkPipelineViewportStateCreateInfo>(),
+      .viewportCount = 1,
+      .pViewports = &viewport,
+      .scissorCount = 1,
+      .pScissors = &scissor };
+
+   // Rasterizer
+   VkPipelineRasterizationStateCreateInfo rasterizer{
+      .sType = get_sType<VkPipelineRasterizationStateCreateInfo>(),
+      .depthClampEnable = VK_FALSE,
+      .rasterizerDiscardEnable = VK_FALSE,
+      .polygonMode = VK_POLYGON_MODE_FILL,
+      .cullMode = VK_CULL_MODE_BACK_BIT,
+      .frontFace = VK_FRONT_FACE_CLOCKWISE,
+      .depthBiasEnable = VK_FALSE,
+      .lineWidth = 1.0f   // NOLINT (readability-uppercase-literal-suffix
+   };
+
+   // Multisampling
+   VkPipelineMultisampleStateCreateInfo multisampling{
+      .sType = get_sType<VkPipelineMultisampleStateCreateInfo>(),
+      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+      .sampleShadingEnable = VK_FALSE };
+
+   // Depthand stencil testing
+
+   // Color blending
+   VkPipelineColorBlendAttachmentState color_blend_attachment{
+      .blendEnable = VK_FALSE,
+      //.srcColorBlendFactor = VK_BLEND_FACTOR_ONE,    // Optional
+      //.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,   // Optional
+      //.colorBlendOp = VK_BLEND_OP_ADD,               // Optional
+      //.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,    // Optional
+      //.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,   // Optional
+      //.alphaBlendOp = VK_BLEND_OP_ADD,               // Optional
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+                        VK_COLOR_COMPONENT_A_BIT };
+
+   /*
+      colorBlendAttachment.blendEnable = VK_TRUE;
+      colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+      colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+      colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+   */
+
+   VkPipelineColorBlendStateCreateInfo color_blending{
+      .sType = get_sType<VkPipelineColorBlendStateCreateInfo>(),
+      .logicOpEnable = VK_FALSE,
+      .logicOp = VK_LOGIC_OP_COPY,   // Optional
+      .attachmentCount = 1,
+      .pAttachments = &color_blend_attachment,
+      .blendConstants{ 0.0f, 0.0f, 0.0f, 0.0f }   // Optional
+   };
+
+   // Pipeline layout
+   VkPipelineLayoutCreateInfo pipeline_layout_info{
+      .sType = get_sType<VkPipelineLayoutCreateInfo>(),
+      .setLayoutCount = 0,
+      .pushConstantRangeCount = 0 };
+
+   auto pipeline_layout_result = logical_device->vkCreatePipelineLayout( pipeline_layout_info );
+   if ( pipeline_layout_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create pipeline layout!" );
+   }
+
+   pipeline_layout = std::move( pipeline_layout_result ).value();
+
+   // Create pipeline
+   VkGraphicsPipelineCreateInfo pipeline_info{
+      .sType = get_sType<VkGraphicsPipelineCreateInfo>(),
+      .stageCount = 2,
+      .pStages = shader_stages.data(),
+      .pVertexInputState = &vertex_input_info,
+      .pInputAssemblyState = &input_assembly,
+      .pViewportState = &viewport_state,
+      .pRasterizationState = &rasterizer,
+      .pMultisampleState = &multisampling,
+      .pDepthStencilState = nullptr,   // Optional
+      .pColorBlendState = &color_blending,
+      //.pDynamicState = &dynamic_state,
+      .layout = *pipeline_layout,
+      .renderPass = *render_pass,
+      .subpass = 0,
+      .basePipelineHandle = VK_NULL_HANDLE,   // Optional
+      .basePipelineIndex = -1,                // Optional
+   };
+
+   VkPipelineCache pipeline_cache = VK_NULL_HANDLE;
+   std::span<VkGraphicsPipelineCreateInfo> pipeline_infos{ &pipeline_info, 1 };
+
+   auto graphic_pipeline_result = logical_device->vkCreateGraphicsPipelines( pipeline_cache, pipeline_infos );
+   if ( graphic_pipeline_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create graphics pipeline!" );
+   }
+
+   graphics_pipeline = std::move( graphic_pipeline_result ).value();
+}
+
+
+auto vulkan_wrapper::read_file(
+   const std::string& filename )
+   -> std::vector<char>
+{
+   std::ifstream file( filename, std::ios::ate | std::ios::binary );
+
+   if ( !file.is_open() )
+   {
+      throw std::runtime_error( "failed to open file!" );
+   }
+
+   size_t fileSize = (size_t)file.tellg();
+   std::vector<char> buffer( fileSize );
+
+   file.seekg( 0 );
+   file.read(
+      buffer.data(),
+      fileSize );
+
+   file.close();
+
+   return buffer;
+}
+
+auto vulkan_wrapper::create_shader_module(
+   const std::vector<char>& code )
+   -> VkShaderModule_resource_t
+{
+   VkShaderModuleCreateInfo create_info{};
+   create_info.sType = get_sType<VkShaderModuleCreateInfo>();   // VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
+   create_info.codeSize = code.size();
+   create_info.pCode = reinterpret_cast<const uint32_t*>( code.data() );
+
+   auto shader_module = logical_device->vkCreateShaderModule( create_info );
+
+   if ( shader_module.holds_error() )
+   {
+      throw std::runtime_error( "failed to create shader module!" );
+   }
+
+   return std::move( shader_module ).value();
+}
+
+void vulkan_wrapper::create_render_pass()
+{
+   // Attachment description
+   VkAttachmentDescription color_attachment{
+      .format = swapchain_image_format,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
+
+   // Subpasses and attachment references
+   VkAttachmentReference color_attachment_ref{
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+
+   VkSubpassDescription subpass{
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &color_attachment_ref };
+
+   // Render pass
+   VkRenderPassCreateInfo render_pass_info{
+      .sType = get_sType<VkRenderPassCreateInfo>(),
+      .attachmentCount = 1,
+      .pAttachments = &color_attachment,
+      .subpassCount = 1,
+      .pSubpasses = &subpass };
+
+   auto render_pass_result = logical_device->vkCreateRenderPass( render_pass_info );
+
+   if ( render_pass_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create render pass!" );
+   }
+
+   render_pass = std::move(render_pass_result).value();
+}

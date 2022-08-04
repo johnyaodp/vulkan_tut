@@ -11,11 +11,20 @@ add_executable(NggTriangle "")
 target_sources(
    NggTriangle
    PRIVATE
+      vulkan_glfw_wrapper.h
+      vulkan_glfw_wrapper.cpp
+      vulkan_tutorial.h
+      vulkan_tutorial.cpp
       main.cpp)
-      
+
+
+
+#link_directories("${NEXTGENGRAPHICS_LIB}")
+link_directories("${GLFW_PACKAGE}/out/build/x64-Debug/src")
+
 target_link_libraries(
    NggTriangle
    PRIVATE
-      "C:/GL/glfw/out/build/x64-Debug/src/glfw3.lib"
-      "C:/VulkanSDK/1.3.216.0/Lib/vulkan-1.lib")
-
+      ${vulkan_utils}
+      ${datapath_lib}
+      "${GLFW_PACKAGE}/out/build/x64-Debug/src/glfw3.lib" )
