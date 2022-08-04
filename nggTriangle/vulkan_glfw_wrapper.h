@@ -82,11 +82,11 @@ private:
    datapath::vulkan_utils::dispatcher_t initial_dispatcher{
       datapath::vulkan_utils::vulkan_engine_t::initialise_initial_dispatcher() };
 
+   datapath::vulkan_utils::VkSurfaceKHR_resource_t surface;
+
    std::optional<datapath::vulkan_utils::physical_device_wrapper_t> physical_device;
    std::shared_ptr<const datapath::vulkan_utils::device_dispatcher_t> logical_device;
    datapath::vulkan_utils::VkSwapchainKHR_resource_t swapchain;
-
-   datapath::vulkan_utils::VkSurfaceKHR_resource_t surface;
 
    std::optional<datapath::vulkan_utils::queue_wrapper_t> graphics_queue{};
    std::optional<datapath::vulkan_utils::queue_wrapper_t> present_queue{};
