@@ -72,6 +72,8 @@ public:
 protected:
 
 private:
+   static constexpr int max_frames_in_flight = 2;
+
    // Members
    GLFWwindow* window{};
 
@@ -105,6 +107,13 @@ private:
 
    std::vector<datapath::vulkan_utils::VkFramebuffer_resource_t> swapchain_framebuffers;
 
+   VkCommandPool_resource_shared_t command_pool;
+   std::vector<command_buffer_wrapper_t> command_buffer;
+
+   std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> image_available_semaphores;
+   std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> render_finished_semaphores;
+   std::vector<datapath::vulkan_utils::VkFence_resource_t> in_flight_fences;
+   uint32_t current_frame = 0;
 
 #ifdef NDEBUG
    const bool enableValidationLayers = false;
@@ -127,6 +136,12 @@ private:
       while ( !glfwWindowShouldClose( window ) )
       {
          glfwPollEvents();
+         draw_frame();
+      }
+
+      if (logical_device->vkDeviceWaitIdle() != VK_SUCCESS)
+      {
+         throw std::runtime_error("failed to wait for idle!");
       }
    };
 
@@ -196,6 +211,10 @@ private:
 
    void create_framebuffers();
 
+   void create_command_pool();
+
+   void create_command_buffer();
+
    // Loading shader
    static
    auto read_file(
@@ -206,9 +225,16 @@ private:
       const std::vector<char>& code )
       -> VkShaderModule_resource_t;
 
-   // frame buffers
 
+   // Drawing
+   // command buffer
+   void record_command_buffer(
+      command_buffer_wrapper_t& command_buffer,
+      uint32_t imageIndex );
 
+   virtual void draw_frame();
+
+   void create_sync_objects();
 
    // Debug messenger
    void setup_debug_messenger();
@@ -223,4 +249,3 @@ private:
       void* pUserData )
       -> VkBool32;
 };
-
