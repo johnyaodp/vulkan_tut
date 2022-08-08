@@ -22,6 +22,18 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
+#define VERTEX_ACTIVE  1
+#if VERTEX_ACTIVE == 0
+const std::vector<Vertex> vertices = {
+   { { 0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+   { { 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
+   { { -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } } };
+#elif VERTEX_ACTIVE == 1
+const std::vector<Vertex> vertices = {
+   { { 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
+   { { 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
+   { { -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } } };
+#endif
 
 // Environment depdent code: Windows
 void vulkan_wrapper::init_window(
@@ -59,6 +71,7 @@ void vulkan_wrapper::init_vulkan(
    create_framebuffers();
 
    create_command_pool();
+   create_vertex_buffer();
    create_command_buffer();
    create_sync_objects();
 }
@@ -623,12 +636,15 @@ void vulkan_wrapper::create_graphics_pipeline()
    dynamic_state.pDynamicStates = dynamic_states.data();
 
    // Vertex input
+   auto bindingDescription = Vertex::getBindingDescription();
+   auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
    VkPipelineVertexInputStateCreateInfo vertex_input_info{
       .sType = get_sType<VkPipelineVertexInputStateCreateInfo>(),
-      .vertexBindingDescriptionCount = 0,
-      .pVertexBindingDescriptions = nullptr,   // Optional
-      .vertexAttributeDescriptionCount = 0,
-      .pVertexAttributeDescriptions = nullptr };   // Optional
+      .vertexBindingDescriptionCount = 1,
+      .pVertexBindingDescriptions = &bindingDescription,
+      .vertexAttributeDescriptionCount = static_cast<uint32_t>( attributeDescriptions.size() ),
+      .pVertexAttributeDescriptions = attributeDescriptions.data() };
 
    // Input assembly
    VkPipelineInputAssemblyStateCreateInfo input_assembly{
@@ -964,6 +980,13 @@ void vulkan_wrapper::record_command_buffer(
 
    command_buffer.vkCmdSetScissor( 0, scissors );
 
+   std::array<VkDeviceSize, 1> offsets{ 0 };
+
+   command_buffer.vkCmdBindVertexBuffers(
+      0,
+      std::span<const VkBuffer>( &vertex_buffer.get(), 1 ),
+      offsets );
+
    // Draw command buffer
    command_buffer.vkCmdDraw( 3, 1, 0, 0 );
 
@@ -1127,4 +1150,95 @@ void vulkan_wrapper::cleanup_swapchain()
    swapchain_image_views.clear();
 
    swapchain.reset();
+}
+
+void vulkan_wrapper::create_vertex_buffer()
+{
+   VkBufferCreateInfo buffer_info{
+      .sType = get_sType<VkBufferCreateInfo>(),
+      .size = sizeof( Vertex ) * vertices.size(),
+      .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+   };
+
+   auto vertex_buffer_result = logical_device->vkCreateBuffer( buffer_info );
+   if ( vertex_buffer_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create vertex buffer!" );
+   }
+
+   vertex_buffer = std::move( vertex_buffer_result ).value();
+
+   // Memory requirements
+   VkMemoryRequirements mem_requirements = logical_device->vkGetBufferMemoryRequirements( *vertex_buffer );
+
+   // Memory allocation
+   VkMemoryAllocateInfo alloc_info{
+      .sType = get_sType<VkMemoryAllocateInfo>(),
+      .allocationSize = mem_requirements.size,
+      .memoryTypeIndex = find_memory_type(
+         mem_requirements.memoryTypeBits,
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ) };
+
+   auto vertex_buffer_memory_result = logical_device->vkAllocateMemory( alloc_info );
+
+   if ( vertex_buffer_memory_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to allocate vertex buffer memory!" );
+   }
+
+   vertex_buffer_memory = std::move( vertex_buffer_memory_result ).value();
+
+   auto result =
+      logical_device->vkBindBufferMemory(
+         vertex_buffer.get(),
+         vertex_buffer_memory.get(),
+         0 );
+   if ( result != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to bind vertext_buffer to vertex buffer memory!" );
+   }
+
+   // Filling the vertex buffer
+   void* data;
+   result =
+      logical_device->vkMapMemory(
+         vertex_buffer_memory.get(),
+         0,
+         buffer_info.size,
+         0,
+         &data );
+
+   if ( result != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to map vertex buffer memory!" );
+   }
+   memcpy(
+      data,
+      vertices.data(),
+      (size_t)buffer_info.size );
+
+   logical_device->vkUnmapMemory(
+      vertex_buffer_memory.get() );
+}
+
+auto vulkan_wrapper::find_memory_type(
+   uint32_t type_filter,
+   VkMemoryPropertyFlags properties )
+   -> uint32_t
+{
+   VkPhysicalDeviceMemoryProperties mem_properties = physical_device->vkGetPhysicalDeviceMemoryProperties();
+
+   for ( uint32_t i = 0;
+         i < mem_properties.memoryTypeCount;
+         i++ )
+   {
+      if ( ( type_filter & ( 1 << i ) ) &&
+           ( mem_properties.memoryTypes[i].propertyFlags & properties ) == properties )
+      {
+         return i;
+      }
+   }
+
+   throw std::runtime_error( "failed to find suitable memory type!" );
 }

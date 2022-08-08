@@ -9,6 +9,7 @@
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+#include <glm/glm.hpp>
 
 using namespace datapath::vulkan_utils;
 
@@ -41,6 +42,45 @@ struct SwapChainSupportDetails
    VkSurfaceCapabilitiesKHR capabilities;
    std::vector<VkSurfaceFormatKHR> formats;
    std::vector<VkPresentModeKHR> presentModes;
+};
+
+struct Vertex
+{
+   glm::vec2 pos;
+   glm::vec3 color;
+
+   static
+   auto getBindingDescription()
+      -> VkVertexInputBindingDescription
+   {
+      VkVertexInputBindingDescription binding_description{};
+      binding_description.binding = 0;
+      binding_description.stride = sizeof( Vertex );
+      binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+      return binding_description;
+   }
+
+   static
+   auto getAttributeDescriptions()
+      -> std::array<
+         VkVertexInputAttributeDescription,
+         2>
+   {
+      std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions{};
+
+      attribute_descriptions[0].binding = 0;
+      attribute_descriptions[0].location = 0;
+      attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+      attribute_descriptions[0].offset = offsetof( Vertex, pos );
+
+      attribute_descriptions[1].binding = 0;
+      attribute_descriptions[1].location = 1;
+      attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+      attribute_descriptions[1].offset = offsetof( Vertex, color );
+
+      return attribute_descriptions;
+   }
 };
 
 
@@ -109,6 +149,9 @@ private:
 
    VkCommandPool_resource_shared_t command_pool;
    std::vector<command_buffer_wrapper_t> command_buffer;
+
+   VkBuffer_resource_t vertex_buffer;
+   VkDeviceMemory_resource_t vertex_buffer_memory;
 
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> image_available_semaphores;
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> render_finished_semaphores;
@@ -227,6 +270,12 @@ private:
       const std::vector<char>& code )
       -> VkShaderModule_resource_t;
 
+   //
+   void create_vertex_buffer();
+   auto find_memory_type(
+      uint32_t typeFilter,
+      VkMemoryPropertyFlags properties )
+      -> uint32_t;
 
    // Drawing
    // command buffer
