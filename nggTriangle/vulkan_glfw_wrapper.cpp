@@ -22,7 +22,7 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-#define VERTEX_ACTIVE  1
+#define VERTEX_ACTIVE 1
 #if VERTEX_ACTIVE == 0
 const std::vector<Vertex> vertices = {
    { { 0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
@@ -1154,58 +1154,21 @@ void vulkan_wrapper::cleanup_swapchain()
 
 void vulkan_wrapper::create_vertex_buffer()
 {
-   VkBufferCreateInfo buffer_info{
-      .sType = get_sType<VkBufferCreateInfo>(),
-      .size = sizeof( Vertex ) * vertices.size(),
-      .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-   };
+   VkDeviceSize buffer_size = sizeof(Vertex) * vertices.size();
 
-   auto vertex_buffer_result = logical_device->vkCreateBuffer( buffer_info );
-   if ( vertex_buffer_result.holds_error() )
-   {
-      throw std::runtime_error( "failed to create vertex buffer!" );
-   }
-
-   vertex_buffer = std::move( vertex_buffer_result ).value();
-
-   // Memory requirements
-   VkMemoryRequirements mem_requirements = logical_device->vkGetBufferMemoryRequirements( *vertex_buffer );
-
-   // Memory allocation
-   VkMemoryAllocateInfo alloc_info{
-      .sType = get_sType<VkMemoryAllocateInfo>(),
-      .allocationSize = mem_requirements.size,
-      .memoryTypeIndex = find_memory_type(
-         mem_requirements.memoryTypeBits,
-         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ) };
-
-   auto vertex_buffer_memory_result = logical_device->vkAllocateMemory( alloc_info );
-
-   if ( vertex_buffer_memory_result.holds_error() )
-   {
-      throw std::runtime_error( "failed to allocate vertex buffer memory!" );
-   }
-
-   vertex_buffer_memory = std::move( vertex_buffer_memory_result ).value();
-
-   auto result =
-      logical_device->vkBindBufferMemory(
-         vertex_buffer.get(),
-         vertex_buffer_memory.get(),
-         0 );
-   if ( result != VK_SUCCESS )
-   {
-      throw std::runtime_error( "failed to bind vertext_buffer to vertex buffer memory!" );
-   }
+   std::tie( vertex_buffer, vertex_buffer_memory ) =
+      create_buffer(
+         buffer_size,
+         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
    // Filling the vertex buffer
    void* data;
-   result =
+   auto result =
       logical_device->vkMapMemory(
          vertex_buffer_memory.get(),
          0,
-         buffer_info.size,
+         sizeof(Vertex) * vertices.size(),
          0,
          &data );
 
@@ -1216,7 +1179,7 @@ void vulkan_wrapper::create_vertex_buffer()
    memcpy(
       data,
       vertices.data(),
-      (size_t)buffer_info.size );
+      buffer_size);
 
    logical_device->vkUnmapMemory(
       vertex_buffer_memory.get() );
@@ -1241,4 +1204,56 @@ auto vulkan_wrapper::find_memory_type(
    }
 
    throw std::runtime_error( "failed to find suitable memory type!" );
+}
+
+auto vulkan_wrapper::create_buffer(
+   VkDeviceSize size,
+   VkBufferUsageFlags usage,
+   VkMemoryPropertyFlags properties )
+   -> std::pair<
+      VkBuffer_resource_t,
+      VkDeviceMemory_resource_t>
+{
+   VkBufferCreateInfo buffer_info{
+      .sType = get_sType<VkBufferCreateInfo>(),
+      .size = size,
+      .usage = usage,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE };
+
+   auto buffer = logical_device->vkCreateBuffer( buffer_info );
+   if ( buffer.holds_error() )
+   {
+      throw std::runtime_error( "failed to create buffer!" );
+   }
+
+   // Memory requirements
+   VkMemoryRequirements mem_requirements = logical_device->vkGetBufferMemoryRequirements( *buffer.value() );
+
+   // Memory allocation
+   VkMemoryAllocateInfo alloc_info{
+      .sType = get_sType<VkMemoryAllocateInfo>(),
+      .allocationSize = mem_requirements.size,
+      .memoryTypeIndex = find_memory_type( mem_requirements.memoryTypeBits, properties ) };
+
+   auto buffer_memory = logical_device->vkAllocateMemory( alloc_info );
+
+   if ( buffer_memory.holds_error() )
+   {
+      throw std::runtime_error( "failed to allocate buffer memory!" );
+   }
+
+   auto result =
+      logical_device->vkBindBufferMemory(
+         buffer.value().get(),
+         buffer_memory.value().get(),
+         0 );
+   if ( result != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to bind buffer and alloced memory together!" );
+   }
+
+   return
+      std::pair<VkBuffer_resource_t, VkDeviceMemory_resource_t>(
+         std::move( buffer ).value(),
+         std::move( buffer_memory ).value() );
 }
