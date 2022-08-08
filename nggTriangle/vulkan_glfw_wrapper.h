@@ -150,8 +150,6 @@ private:
    VkCommandPool_resource_shared_t command_pool;
    std::vector<command_buffer_wrapper_t> command_buffer;
 
-   VkBuffer_resource_t stage_buffer;
-   VkDeviceMemory_resource_t stage_buffer_memory;
    VkBuffer_resource_t vertex_buffer;
    VkDeviceMemory_resource_t vertex_buffer_memory;
 
@@ -272,17 +270,20 @@ private:
       const std::vector<char>& code )
       -> VkShaderModule_resource_t;
 
-   //
+   // Buffer related methods
    void create_vertex_buffer();
 
    auto create_buffer(
       VkDeviceSize size,
       VkBufferUsageFlags usage,
-      VkMemoryPropertyFlags properties)
-      ->std::pair<
-      VkBuffer_resource_t,
-      VkDeviceMemory_resource_t>;
-
+      VkMemoryPropertyFlags properties )
+      -> std::pair<
+         VkBuffer_resource_t,
+         VkDeviceMemory_resource_t>;
+   void copy_buffer(
+      VkBuffer srcBuffer,
+      VkBuffer dstBuffer,
+      VkDeviceSize size );
 
    auto find_memory_type(
       uint32_t typeFilter,

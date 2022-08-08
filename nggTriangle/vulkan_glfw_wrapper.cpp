@@ -1154,21 +1154,25 @@ void vulkan_wrapper::cleanup_swapchain()
 
 void vulkan_wrapper::create_vertex_buffer()
 {
-   VkDeviceSize buffer_size = sizeof(Vertex) * vertices.size();
+   VkDeviceSize buffer_size = sizeof( Vertex ) * vertices.size();
 
-   std::tie( vertex_buffer, vertex_buffer_memory ) =
+   VkBuffer_resource_t staging_buffer;
+   VkDeviceMemory_resource_t staging_buffer_memory;
+
+   // Create staging buffer
+   std::tie( staging_buffer, staging_buffer_memory ) =
       create_buffer(
          buffer_size,
-         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
 
-   // Filling the vertex buffer
+   // Filling the staging buffer
    void* data;
    auto result =
       logical_device->vkMapMemory(
-         vertex_buffer_memory.get(),
+         staging_buffer_memory.get(),
          0,
-         sizeof(Vertex) * vertices.size(),
+         sizeof( Vertex ) * vertices.size(),
          0,
          &data );
 
@@ -1179,10 +1183,20 @@ void vulkan_wrapper::create_vertex_buffer()
    memcpy(
       data,
       vertices.data(),
-      buffer_size);
+      buffer_size );
 
    logical_device->vkUnmapMemory(
-      vertex_buffer_memory.get() );
+      staging_buffer_memory.get() );
+
+   // Create vertex buffer
+   std::tie( vertex_buffer, vertex_buffer_memory ) =
+      create_buffer(
+         buffer_size,
+         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+   // Copy data to vertex buffer
+   copy_buffer(staging_buffer.get(), vertex_buffer.get(), buffer_size);
 }
 
 auto vulkan_wrapper::find_memory_type(
@@ -1247,6 +1261,7 @@ auto vulkan_wrapper::create_buffer(
          buffer.value().get(),
          buffer_memory.value().get(),
          0 );
+
    if ( result != VK_SUCCESS )
    {
       throw std::runtime_error( "failed to bind buffer and alloced memory together!" );
@@ -1256,4 +1271,63 @@ auto vulkan_wrapper::create_buffer(
       std::pair<VkBuffer_resource_t, VkDeviceMemory_resource_t>(
          std::move( buffer ).value(),
          std::move( buffer_memory ).value() );
+}
+
+void vulkan_wrapper::copy_buffer(
+   VkBuffer srcBuffer,
+   VkBuffer dstBuffer,
+   VkDeviceSize size )
+{
+   DPVkCommandBufferAllocateInfo_t command_buffer_alloc_info{
+      .command_pool = command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .command_buffer_count = 1 };
+
+
+   auto command_buffer_result = logical_device->vkAllocateCommandBuffers( command_buffer_alloc_info );
+   if ( command_buffer_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to alloc command buffer!" );
+   }
+
+   const command_buffer_wrapper_t& command_buffer = command_buffer_result.value().front();
+
+   // Begin recording command
+   VkCommandBufferBeginInfo begin_info{
+      .sType = get_sType<VkCommandBufferBeginInfo>(),
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .pInheritanceInfo = nullptr   // Optional
+   };
+
+   if ( command_buffer.vkBeginCommandBuffer( begin_info ) != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to begin recording command buffer!" );
+   }
+
+   VkBufferCopy copy_region{
+      .srcOffset = 0,   // Optional
+      .dstOffset = 0,   // Optional
+      .size = size };
+
+   command_buffer.vkCmdCopyBuffer(
+      srcBuffer,
+      dstBuffer,
+      std::span<VkBufferCopy>( &copy_region, 1 ) );
+
+   if ( command_buffer.vkEndCommandBuffer() != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to record command buffer!" );
+   }
+
+   VkCommandBuffer command_buffer_handle = command_buffer.handle();
+   VkSubmitInfo submit_info{
+      .sType = get_sType<VkSubmitInfo>(),
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer_handle };
+
+   auto result = graphics_queue->vkQueueSubmit(std::span<const VkSubmitInfo>( &submit_info, 1), VK_NULL_HANDLE);
+   result = graphics_queue->vkQueueWaitIdle();
+
+   //logical_device->vkFreeCommandBuffers(*command_pool, std::span<VkCommandBuffer>(&command_buffer_handle, 1));
+
 }
