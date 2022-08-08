@@ -115,6 +115,8 @@ private:
    std::vector<datapath::vulkan_utils::VkFence_resource_t> in_flight_fences;
    uint32_t current_frame = 0;
 
+   bool framebuffer_resized{ false };
+
 #ifdef NDEBUG
    const bool enableValidationLayers = false;
 #else
@@ -139,9 +141,9 @@ private:
          draw_frame();
       }
 
-      if (logical_device->vkDeviceWaitIdle() != VK_SUCCESS)
+      if ( logical_device->vkDeviceWaitIdle() != VK_SUCCESS )
       {
-         throw std::runtime_error("failed to wait for idle!");
+         throw std::runtime_error( "failed to wait for idle!" );
       }
    };
 
@@ -232,9 +234,20 @@ private:
       command_buffer_wrapper_t& command_buffer,
       uint32_t imageIndex );
 
-   virtual void draw_frame();
+   virtual
+   void draw_frame();
 
    void create_sync_objects();
+
+   void recreate_swapchain();
+   void cleanup_swapchain();
+
+   //
+   static
+   void framebuffer_resize_callback(
+      GLFWwindow* window,
+      int width,
+      int height );
 
    // Debug messenger
    void setup_debug_messenger();

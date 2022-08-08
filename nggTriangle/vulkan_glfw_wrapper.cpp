@@ -32,12 +32,12 @@ void vulkan_wrapper::init_window(
    glfwInit();
 
    glfwWindowHint( GLFW_CLIENT_API, GLFW_NO_API );
-   glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
+   // glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
 
    window = glfwCreateWindow( width, height, title, nullptr, nullptr );
 
-   // glfwSetWindowUserPointer(window, this);
-   // glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+   glfwSetWindowUserPointer( window, this );
+   glfwSetFramebufferSizeCallback( window, framebuffer_resize_callback );
 }
 
 
@@ -68,6 +68,17 @@ void vulkan_wrapper::cleanup()
    destroy_debug_messenger();
 
    destroy_window();
+}
+
+
+//__________________________________________________________________________________________________
+void vulkan_wrapper::framebuffer_resize_callback(
+   GLFWwindow* window,
+   [[maybe_unused]] int width,
+   [[maybe_unused]] int height )
+{
+   auto app = reinterpret_cast<vulkan_wrapper*>( glfwGetWindowUserPointer( window ) );
+   app->framebuffer_resized = true;
 }
 
 void vulkan_wrapper::create_instance(
@@ -1007,11 +1018,6 @@ void vulkan_wrapper::draw_frame()
    {
       throw std::runtime_error( "failed to wait for fences!" );
    }
-   if ( logical_device->vkResetFences( fences ) != VK_SUCCESS )
-   {
-      throw std::runtime_error( "failed to reset fences!" );
-   }
-
    // Acquire an image from the swap chain
 
    uint32_t image_index =
@@ -1042,6 +1048,13 @@ void vulkan_wrapper::draw_frame()
       .signalSemaphoreCount = 1,
       .pSignalSemaphores = &render_finished_semaphores[current_frame].get() };
 
+   // Only reset the fence if we are submitting work
+   if ( logical_device->vkResetFences( fences ) != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to reset fences!" );
+   }
+
+
    std::span<VkSubmitInfo> submit_info_span{ &submit_info, 1 };
 
    if ( ( *graphics_queue ).vkQueueSubmit( submit_info_span, in_flight_fences[current_frame] ) != VK_SUCCESS )
@@ -1059,19 +1072,59 @@ void vulkan_wrapper::draw_frame()
       .pImageIndices = &image_index,
       .pResults = nullptr };
 
-   auto result = present_queue.value().vkQueuePresentKHR(present_info);
+   auto result = present_queue.value().vkQueuePresentKHR( present_info );
 
-   // if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized)
-   // {
-   //    framebufferResized = false;
-   //    //recreate_swap_chain();
-   // }
-   // else 
-   if (result != VK_SUCCESS)
+   if ( result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized )
    {
-      throw std::runtime_error("failed to queue present KHR!");
+      framebuffer_resized = false;
+      recreate_swapchain();
+   }
+   else if ( result != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to queue present KHR!" );
    }
 
-   current_frame = (current_frame + 1) % max_frames_in_flight;
+   current_frame = ( current_frame + 1 ) % max_frames_in_flight;
+}
 
+void vulkan_wrapper::recreate_swapchain()
+{
+   if ( logical_device->vkDeviceWaitIdle() != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to wait for idle!" );
+   }
+
+   cleanup_swapchain();
+
+   create_swap_chain();
+   create_image_views();
+   create_render_pass();
+   create_graphics_pipeline();
+   create_framebuffers();
+}
+
+void vulkan_wrapper::cleanup_swapchain()
+{
+   for ( auto& scfb : swapchain_framebuffers )
+   {
+      scfb.reset();
+   }
+   swapchain_framebuffers.clear();   //???
+
+   for ( auto& gpl : graphics_pipeline )
+   {
+      gpl.reset();
+   }
+   graphics_pipeline.clear();
+
+   pipeline_layout.reset();
+   render_pass.reset();
+
+   for ( auto& sciv : swapchain_image_views )
+   {
+      sciv.reset();
+   }
+   swapchain_image_views.clear();
+
+   swapchain.reset();
 }
