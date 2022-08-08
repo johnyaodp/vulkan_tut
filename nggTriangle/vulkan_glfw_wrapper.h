@@ -152,6 +152,8 @@ private:
 
    VkBuffer_resource_t vertex_buffer;
    VkDeviceMemory_resource_t vertex_buffer_memory;
+   VkBuffer_resource_t index_buffer;
+   VkDeviceMemory_resource_t index_buffer_memory;
 
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> image_available_semaphores;
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> render_finished_semaphores;
@@ -272,6 +274,7 @@ private:
 
    // Buffer related methods
    void create_vertex_buffer();
+   void create_index_buffer();
 
    auto create_buffer(
       VkDeviceSize size,

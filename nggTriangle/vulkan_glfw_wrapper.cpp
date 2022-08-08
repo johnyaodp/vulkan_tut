@@ -22,7 +22,7 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-#define VERTEX_ACTIVE 1
+#define VERTEX_ACTIVE 2
 #if VERTEX_ACTIVE == 0
 const std::vector<Vertex> vertices = {
    { { 0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
@@ -33,7 +33,15 @@ const std::vector<Vertex> vertices = {
    { { 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
    { { 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
    { { -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } } };
+#elif VERTEX_ACTIVE == 2
+const std::vector<Vertex> vertices = {
+   { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+   { { 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
+   { { 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
+   { { -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } } };
 #endif
+
+const std::vector<uint16_t> g_indices = { 0, 1, 2, 2, 3, 0 };
 
 // Environment depdent code: Windows
 void vulkan_wrapper::init_window(
@@ -72,6 +80,7 @@ void vulkan_wrapper::init_vulkan(
 
    create_command_pool();
    create_vertex_buffer();
+   create_index_buffer();
    create_command_buffer();
    create_sync_objects();
 }
@@ -987,8 +996,15 @@ void vulkan_wrapper::record_command_buffer(
       std::span<const VkBuffer>( &vertex_buffer.get(), 1 ),
       offsets );
 
+   command_buffer.vkCmdBindIndexBuffer(
+      index_buffer.get(),
+      0,
+      VK_INDEX_TYPE_UINT16 );
+
    // Draw command buffer
-   command_buffer.vkCmdDraw( 3, 1, 0, 0 );
+   //command_buffer.vkCmdDraw( 3, 1, 0, 0 );
+   command_buffer.vkCmdDrawIndexed(static_cast<uint32_t>(g_indices.size()), 1, 0, 0, 0 );
+
 
    // Finishing up
    command_buffer.vkCmdEndRenderPass();
@@ -1172,7 +1188,7 @@ void vulkan_wrapper::create_vertex_buffer()
       logical_device->vkMapMemory(
          staging_buffer_memory.get(),
          0,
-         sizeof( Vertex ) * vertices.size(),
+         buffer_size,
          0,
          &data );
 
@@ -1196,8 +1212,62 @@ void vulkan_wrapper::create_vertex_buffer()
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
    // Copy data to vertex buffer
-   copy_buffer(staging_buffer.get(), vertex_buffer.get(), buffer_size);
+   copy_buffer(
+      staging_buffer.get(),
+      vertex_buffer.get(),
+      buffer_size );
 }
+
+void vulkan_wrapper::create_index_buffer()
+{
+   VkDeviceSize buffer_size = sizeof( uint16_t ) * g_indices.size();
+
+   VkBuffer_resource_t staging_buffer;
+   VkDeviceMemory_resource_t staging_buffer_memory;
+
+   // Create staging buffer
+   std::tie( staging_buffer, staging_buffer_memory ) =
+      create_buffer(
+         buffer_size,
+         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+
+   // Filling the staging buffer
+   void* data;
+   auto result =
+      logical_device->vkMapMemory(
+         staging_buffer_memory.get(),
+         0,
+         buffer_size,
+         0,
+         &data );
+
+   if ( result != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to map index buffer memory!" );
+   }
+   memcpy(
+      data,
+      g_indices.data(),
+      buffer_size );
+
+   logical_device->vkUnmapMemory(
+      staging_buffer_memory.get() );
+
+   // Create vertex buffer
+   std::tie( index_buffer, index_buffer_memory ) =
+      create_buffer(
+         buffer_size,
+         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+   // Copy data to vertex buffer
+   copy_buffer(
+      staging_buffer.get(),
+      index_buffer.get(),
+      buffer_size );
+}
+
 
 auto vulkan_wrapper::find_memory_type(
    uint32_t type_filter,
@@ -1325,9 +1395,12 @@ void vulkan_wrapper::copy_buffer(
       .commandBufferCount = 1,
       .pCommandBuffers = &command_buffer_handle };
 
-   auto result = graphics_queue->vkQueueSubmit(std::span<const VkSubmitInfo>( &submit_info, 1), VK_NULL_HANDLE);
+   auto result =
+      graphics_queue->vkQueueSubmit(
+         std::span<const VkSubmitInfo>( &submit_info, 1 ),
+         VK_NULL_HANDLE );
    result = graphics_queue->vkQueueWaitIdle();
 
-   //logical_device->vkFreeCommandBuffers(*command_pool, std::span<VkCommandBuffer>(&command_buffer_handle, 1));
-
+   // logical_device->vkFreeCommandBuffers(*command_pool, std::span<VkCommandBuffer>(&command_buffer_handle,
+   // 1));
 }
