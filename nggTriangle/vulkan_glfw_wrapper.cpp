@@ -2,7 +2,9 @@
 
 using namespace datapath::vulkan_utils;
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -11,9 +13,7 @@ using namespace datapath::vulkan_utils;
 #include <stdexcept>
 #include <vector>
 
-
 #pragma warning( disable : 4458 )
-
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -74,6 +74,7 @@ void vulkan_wrapper::init_vulkan(
    create_swap_chain();
    create_image_views();
    create_render_pass();
+   create_descriptor_set_layout();
    create_graphics_pipeline();
 
    create_framebuffers();
@@ -81,6 +82,7 @@ void vulkan_wrapper::init_vulkan(
    create_command_pool();
    create_vertex_buffer();
    create_index_buffer();
+   create_uniform_buffers();
    create_command_buffer();
    create_sync_objects();
 }
@@ -640,7 +642,7 @@ void vulkan_wrapper::create_graphics_pipeline()
    std::vector<VkDynamicState> dynamic_states{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 
    VkPipelineDynamicStateCreateInfo dynamic_state{};
-   dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamic_state.sType = get_sType<VkPipelineDynamicStateCreateInfo>();
    dynamic_state.dynamicStateCount = static_cast<uint32_t>( dynamic_states.size() );
    dynamic_state.pDynamicStates = dynamic_states.data();
 
@@ -735,7 +737,8 @@ void vulkan_wrapper::create_graphics_pipeline()
    // Pipeline layout
    VkPipelineLayoutCreateInfo pipeline_layout_info{
       .sType = get_sType<VkPipelineLayoutCreateInfo>(),
-      .setLayoutCount = 0,
+      .setLayoutCount = 1,
+      .pSetLayouts = &descriptor_set_layout.get(),
       .pushConstantRangeCount = 0 };
 
    auto pipeline_layout_result = logical_device->vkCreatePipelineLayout( pipeline_layout_info );
@@ -758,8 +761,8 @@ void vulkan_wrapper::create_graphics_pipeline()
       .pMultisampleState = &multisampling,
       .pDepthStencilState = nullptr,   // Optional
       .pColorBlendState = &color_blending,
-      //.pDynamicState = &dynamic_state,
-      .layout = *pipeline_layout,
+      .pDynamicState = &dynamic_state,
+      .layout = pipeline_layout.get(),
       .renderPass = *render_pass,
       .subpass = 0,
       .basePipelineHandle = VK_NULL_HANDLE,   // Optional
@@ -1002,8 +1005,13 @@ void vulkan_wrapper::record_command_buffer(
       VK_INDEX_TYPE_UINT16 );
 
    // Draw command buffer
-   //command_buffer.vkCmdDraw( 3, 1, 0, 0 );
-   command_buffer.vkCmdDrawIndexed(static_cast<uint32_t>(g_indices.size()), 1, 0, 0, 0 );
+   // command_buffer.vkCmdDraw( 3, 1, 0, 0 );
+   command_buffer.vkCmdDrawIndexed(
+      static_cast<uint32_t>( g_indices.size() ),
+      1,
+      0,
+      0,
+      0 );
 
 
    // Finishing up
@@ -1066,11 +1074,20 @@ void vulkan_wrapper::draw_frame()
          image_available_semaphores[current_frame].get(),
          VK_NULL_HANDLE );
 
+   //update_uniform_buffer( current_frame );
+
+   // Only reset the fence if we are submitting work
+   if ( logical_device->vkResetFences( fences ) != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to reset fences!" );
+   }
+
    // Record a command buffer which draws the scene onto that image
    if ( command_buffer[current_frame].vkResetCommandBuffer( 0 ) != VK_SUCCESS )
    {
       throw std::runtime_error( "failed to reset command buffer!" );
    }
+
    record_command_buffer( command_buffer[current_frame], image_index );
 
    // Submit the recorded command buffer
@@ -1086,12 +1103,6 @@ void vulkan_wrapper::draw_frame()
       .pCommandBuffers = &cmd_buffer_handle,
       .signalSemaphoreCount = 1,
       .pSignalSemaphores = &render_finished_semaphores[current_frame].get() };
-
-   // Only reset the fence if we are submitting work
-   if ( logical_device->vkResetFences( fences ) != VK_SUCCESS )
-   {
-      throw std::runtime_error( "failed to reset fences!" );
-   }
 
 
    std::span<VkSubmitInfo> submit_info_span{ &submit_info, 1 };
@@ -1403,4 +1414,92 @@ void vulkan_wrapper::copy_buffer(
 
    // logical_device->vkFreeCommandBuffers(*command_pool, std::span<VkCommandBuffer>(&command_buffer_handle,
    // 1));
+}
+
+void vulkan_wrapper::create_descriptor_set_layout()
+{
+   VkDescriptorSetLayoutBinding uboLayoutBinding{};
+   uboLayoutBinding.binding = 0;
+   uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   uboLayoutBinding.descriptorCount = 1;
+   uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+   uboLayoutBinding.pImmutableSamplers = nullptr;
+
+   VkDescriptorSetLayoutCreateInfo layoutInfo{};
+   layoutInfo.sType = get_sType<VkDescriptorSetLayoutCreateInfo>();
+   layoutInfo.bindingCount = 1;
+   layoutInfo.pBindings = &uboLayoutBinding;
+
+   auto result = logical_device->vkCreateDescriptorSetLayout( layoutInfo );
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create descriptor set layout!" );
+   }
+
+   descriptor_set_layout = std::move( result ).value();
+}
+
+void vulkan_wrapper::create_uniform_buffers()
+{
+   VkDeviceSize buffer_size = sizeof( UniformBufferObject );
+
+   uniform_buffers.resize( max_frames_in_flight );
+   uniform_buffers_memory.resize( max_frames_in_flight );
+
+   std::vector<VkBuffer_resource_t>::iterator buffer_iter;
+   std::vector<VkDeviceMemory_resource_t>::iterator dev_memory_iter;
+
+   for ( buffer_iter =
+            uniform_buffers.begin(),
+         dev_memory_iter = uniform_buffers_memory.begin();
+         buffer_iter != uniform_buffers.end();
+         ++buffer_iter, ++dev_memory_iter )
+   {
+      std::tie( *buffer_iter, *dev_memory_iter ) =
+         create_buffer(
+            buffer_size,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+   }
+}
+
+void vulkan_wrapper::update_uniform_buffer(
+   uint32_t current_frame )
+{
+   static auto start_time = std::chrono::high_resolution_clock::now();
+
+   auto current_time = std::chrono::high_resolution_clock::now();
+
+   float time =
+      std::chrono::duration<float, std::chrono::seconds::period>( current_time - start_time ).count();
+
+   UniformBufferObject ubo{};
+   ubo.model =
+      glm::rotate(
+         glm::mat4( 1.0f ),
+         time * glm::radians( 90.0f ),
+         glm::vec3( 0.0f, 0.0f, 1.0f ) );
+   ubo.view =
+      glm::lookAt(
+         glm::vec3( 2.0f, 2.0f, 2.0f ),
+         glm::vec3( 0.0f, 0.0f, 0.0f ),
+         glm::vec3( 0.0f, 0.0f, 1.0f ) );
+   ubo.proj =
+      glm::perspective(
+         glm::radians( 45.0f ),
+         swapchain_extent.width / (float)swapchain_extent.height,
+         0.1f,
+         10.0f );
+   ubo.proj[1][1] *= -1;
+
+   void* data;
+   [[maybe_unused]] auto result =
+      logical_device->vkMapMemory(
+         uniform_buffers_memory[current_frame],
+         0,
+         sizeof( ubo ),
+         0,
+         &data );
+   memcpy( data, &ubo, sizeof( ubo ) );
+   logical_device->vkUnmapMemory( uniform_buffers_memory[current_frame] );
 }

@@ -83,6 +83,11 @@ struct Vertex
    }
 };
 
+struct UniformBufferObject {
+   glm::mat4 model;
+   glm::mat4 view;
+   glm::mat4 proj;
+};
 
 class vulkan_wrapper
 {
@@ -139,6 +144,7 @@ private:
 
    std::vector<datapath::vulkan_utils::VkImageView_resource_t> swapchain_image_views;
 
+   VkDescriptorSetLayout_resource_t descriptor_set_layout;
    VkPipelineLayout_resource_t pipeline_layout;
 
    VkRenderPass_resource_t render_pass;
@@ -154,6 +160,8 @@ private:
    VkDeviceMemory_resource_t vertex_buffer_memory;
    VkBuffer_resource_t index_buffer;
    VkDeviceMemory_resource_t index_buffer_memory;
+   std::vector<VkBuffer_resource_t> uniform_buffers;
+   std::vector<VkDeviceMemory_resource_t> uniform_buffers_memory;
 
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> image_available_semaphores;
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> render_finished_semaphores;
@@ -275,6 +283,7 @@ private:
    // Buffer related methods
    void create_vertex_buffer();
    void create_index_buffer();
+   void create_uniform_buffers();
 
    auto create_buffer(
       VkDeviceSize size,
@@ -293,6 +302,10 @@ private:
       VkMemoryPropertyFlags properties )
       -> uint32_t;
 
+   // Descriptors
+   void create_descriptor_set_layout();
+
+
    // Drawing
    // command buffer
    void record_command_buffer(
@@ -301,6 +314,8 @@ private:
 
    virtual
    void draw_frame();
+
+   void update_uniform_buffer(uint32_t current_image);
 
    void create_sync_objects();
 
