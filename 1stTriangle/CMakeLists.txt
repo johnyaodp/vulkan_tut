@@ -5,16 +5,16 @@
 #
 # vulkan_composition Executable
 #
-message(STATUS "Hello")
 
 add_executable(Triangle "")
+
+target_compile_options( Triangle PRIVATE /wd4100 /wd4458 /wd4459)
 
 target_sources(
    Triangle
    PRIVATE
-      HelloTriangle.h
       HelloTriangle.cpp
-      main.cpp)
+   )
       
 target_link_libraries(
    Triangle
