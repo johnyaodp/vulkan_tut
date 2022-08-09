@@ -1254,11 +1254,11 @@ void vulkan_wrapper::create_index_buffer()
    logical_device->vkUnmapMemory(
       staging_buffer_memory.get() );
 
-   // Create vertex buffer
+   // Create index buffer
    std::tie( index_buffer, index_buffer_memory ) =
       create_buffer(
          buffer_size,
-         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
    // Copy data to vertex buffer
