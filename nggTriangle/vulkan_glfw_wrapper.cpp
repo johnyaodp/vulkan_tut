@@ -1375,10 +1375,18 @@ void vulkan_wrapper::create_descriptor_set_layout()
    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
    uboLayoutBinding.pImmutableSamplers = nullptr;
 
+   VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+   samplerLayoutBinding.binding = 1;
+   samplerLayoutBinding.descriptorCount = 1;
+   samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   samplerLayoutBinding.pImmutableSamplers = nullptr;
+   samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+   std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
    VkDescriptorSetLayoutCreateInfo layoutInfo{};
    layoutInfo.sType = get_sType<VkDescriptorSetLayoutCreateInfo>();
-   layoutInfo.bindingCount = 1;
-   layoutInfo.pBindings = &uboLayoutBinding;
+   layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+   layoutInfo.pBindings = bindings.data();
 
    auto result = logical_device->vkCreateDescriptorSetLayout( layoutInfo );
    if ( result.holds_error() )
@@ -1456,15 +1464,17 @@ void vulkan_wrapper::update_uniform_buffer(
 
 void vulkan_wrapper::create_descriptor_pool()
 {
-   VkDescriptorPoolSize pool_size{
-      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-      .descriptorCount = static_cast<uint32_t>( max_frames_in_flight ) };
+   std::array<VkDescriptorPoolSize, 2> poolSizes{};
+   poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   poolSizes[0].descriptorCount = static_cast<uint32_t>(max_frames_in_flight);
+   poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   poolSizes[1].descriptorCount = static_cast<uint32_t>(max_frames_in_flight);
 
    VkDescriptorPoolCreateInfo pool_info{
       .sType = get_sType<VkDescriptorPoolCreateInfo>(),
       .maxSets = static_cast<uint32_t>( max_frames_in_flight ),
-      .poolSizeCount = 1,
-      .pPoolSizes = &pool_size };
+      .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+      .pPoolSizes = poolSizes.data()};
 
    auto result = logical_device->vkCreateDescriptorPool( pool_info );
    if ( result.holds_error() )
@@ -1500,19 +1510,33 @@ void vulkan_wrapper::create_descriptor_sets()
          .offset = 0,
          .range = sizeof( UniformBufferObject ) };
 
-      VkWriteDescriptorSet descriptor_write{
-         .sType = get_sType<VkWriteDescriptorSet>(),
-         .dstSet = descriptor_sets.get()[i],
-         .dstBinding = 0,
-         .dstArrayElement = 0,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-         .pBufferInfo = &buffer_info };
+      VkDescriptorImageInfo imageInfo{};
+      imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      imageInfo.imageView = *texture_image_view;
+      imageInfo.sampler = *texture_sampler;
+
+      std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+      descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[0].dstSet = descriptor_sets.get()[i];
+      descriptorWrites[0].dstBinding = 0;
+      descriptorWrites[0].dstArrayElement = 0;
+      descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptorWrites[0].descriptorCount = 1;
+      descriptorWrites[0].pBufferInfo = &buffer_info;
+
+      descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptorWrites[1].dstSet = descriptor_sets.get()[i];
+      descriptorWrites[1].dstBinding = 1;
+      descriptorWrites[1].dstArrayElement = 0;
+      descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      descriptorWrites[1].descriptorCount = 1;
+      descriptorWrites[1].pImageInfo = &imageInfo;
 
       std::vector<VkCopyDescriptorSet> copy_descriptor_set{};
 
       logical_device->vkUpdateDescriptorSets(
-         std::span( &descriptor_write, 1 ),
+         descriptorWrites,
          copy_descriptor_set );
 
       ++i;
@@ -1927,3 +1951,4 @@ void vulkan_wrapper::create_texture_sampler()
 
    texture_sampler = std::move( result ).value();
 }
+
