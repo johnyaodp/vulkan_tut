@@ -82,6 +82,7 @@ void vulkan_wrapper::init_vulkan(
 
    create_command_pool();
    create_texture_image();
+   create_texture_image_view();
    create_vertex_buffer();
    create_index_buffer();
    create_uniform_buffers();
@@ -589,32 +590,8 @@ void vulkan_wrapper::create_image_views()
 
    for ( const auto& swapchain_image : swapchain_images )
    {
-      VkImageViewCreateInfo create_info{};
-      create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-      create_info.image = swapchain_image;
-      create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-      create_info.format = swapchain_image_format;
-
-      create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-      create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-      create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-      create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-      create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-      create_info.subresourceRange.baseMipLevel = 0;
-      create_info.subresourceRange.levelCount = 1;
-      create_info.subresourceRange.baseArrayLayer = 0;
-      create_info.subresourceRange.layerCount = 1;
-
-      auto result = logical_device->vkCreateImageView( create_info );
-
-      if ( result.holds_error() )
-      {
-         throw std::runtime_error( "failed to create image views!" );
-      }
-
       swapchain_image_views.emplace_back(
-         std::move( result ).value() );
+         create_image_view( swapchain_image, swapchain_image_format ) );
    }
 }
 
@@ -1538,74 +1515,6 @@ void vulkan_wrapper::create_descriptor_sets()
    }
 }
 
-// Images
-void vulkan_wrapper::create_texture_image()
-{
-   int tex_width, tex_height, tex_channels;
-   stbi_uc* pixels =
-      stbi_load( "textures/texture.jpg", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha );
-   VkDeviceSize image_size = tex_width * tex_height * 4;
-
-   if ( !pixels )
-   {
-      throw std::runtime_error( "failed to load texture image!" );
-   }
-
-   //
-   VkBuffer_resource_t staging_buffer;
-   VkDeviceMemory_resource_t staging_buffer_memory;
-
-   std::tie( staging_buffer, staging_buffer_memory ) =
-      create_buffer(
-         image_size,
-         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
-
-   void* data;
-   [[maybe_unused]] auto result =
-      logical_device->vkMapMemory(
-         staging_buffer_memory.get(),
-         0,
-         image_size,
-         0,
-         &data );
-   memcpy( data, pixels, static_cast<size_t>( image_size ) );
-   logical_device->vkUnmapMemory(
-      staging_buffer_memory.get() );
-
-   stbi_image_free( pixels );
-
-
-   //
-   std::tie( texture_image, texture_image_memory ) =
-      create_image(
-         tex_width,
-         tex_height,
-         VK_FORMAT_R8G8B8A8_SRGB,
-         VK_IMAGE_TILING_OPTIMAL,
-         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
-
-   transition_image_layout(
-      texture_image.get(),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_LAYOUT_UNDEFINED,
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL );
-
-   copy_buffer_to_image(
-      *staging_buffer,
-      *texture_image,
-      static_cast<uint32_t>( tex_width ),
-      static_cast<uint32_t>( tex_height ) );
-
-   transition_image_layout(
-      texture_image.get(),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL );
-}
-
-
 //_____________________________________________________________________________
 auto vulkan_wrapper::create_image(
    uint32_t tex_width,
@@ -1815,22 +1724,26 @@ void vulkan_wrapper::transition_image_layout(
    VkPipelineStageFlags sourceStage;
    VkPipelineStageFlags destinationStage;
 
-   if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+   if ( oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL )
+   {
       barrier.srcAccessMask = 0;
       barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
       sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
       destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
    }
-   else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+   else if ( oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL )
+   {
       barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
       barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
       sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
       destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
    }
-   else {
-      throw std::invalid_argument("unsupported layout transition!");
+   else
+   {
+      throw std::invalid_argument( "unsupported layout transition!" );
    }
 
 
@@ -1876,3 +1789,102 @@ void vulkan_wrapper::copy_buffer_to_image(
 
 
 //______________________________________________________________________________
+// Images
+void vulkan_wrapper::create_texture_image()
+{
+   int tex_width, tex_height, tex_channels;
+   stbi_uc* pixels =
+      stbi_load( "textures/texture.jpg", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha );
+   VkDeviceSize image_size = tex_width * tex_height * 4;
+
+   if ( !pixels )
+   {
+      throw std::runtime_error( "failed to load texture image!" );
+   }
+
+   //
+   VkBuffer_resource_t staging_buffer;
+   VkDeviceMemory_resource_t staging_buffer_memory;
+
+   std::tie( staging_buffer, staging_buffer_memory ) =
+      create_buffer(
+         image_size,
+         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+
+   void* data;
+   [[maybe_unused]] auto result =
+      logical_device->vkMapMemory(
+         staging_buffer_memory.get(),
+         0,
+         image_size,
+         0,
+         &data );
+   memcpy( data, pixels, static_cast<size_t>( image_size ) );
+   logical_device->vkUnmapMemory(
+      staging_buffer_memory.get() );
+
+   stbi_image_free( pixels );
+
+
+   //
+   std::tie( texture_image, texture_image_memory ) =
+      create_image(
+         tex_width,
+         tex_height,
+         VK_FORMAT_R8G8B8A8_SRGB,
+         VK_IMAGE_TILING_OPTIMAL,
+         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+   transition_image_layout(
+      texture_image.get(),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL );
+
+   copy_buffer_to_image(
+      *staging_buffer,
+      *texture_image,
+      static_cast<uint32_t>( tex_width ),
+      static_cast<uint32_t>( tex_height ) );
+
+   transition_image_layout(
+      texture_image.get(),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL );
+}
+
+
+void vulkan_wrapper::create_texture_image_view()
+{
+   texture_image_view = create_image_view( *texture_image, VK_FORMAT_R8G8B8A8_SRGB );
+}
+
+
+auto vulkan_wrapper::create_image_view(
+   VkImage image,
+   VkFormat format )
+   -> VkImageView_resource_t
+{
+   VkImageViewCreateInfo viewInfo{};
+   viewInfo.sType = get_sType<VkImageViewCreateInfo>();
+   viewInfo.image = image;
+   viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+   viewInfo.format = format;
+   viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   viewInfo.subresourceRange.baseMipLevel = 0;
+   viewInfo.subresourceRange.levelCount = 1;
+   viewInfo.subresourceRange.baseArrayLayer = 0;
+   viewInfo.subresourceRange.layerCount = 1;
+
+   auto image_view = logical_device->vkCreateImageView( viewInfo );
+
+   if ( image_view.holds_error() )
+   {
+      throw std::runtime_error( "failed to create texture image view!" );
+   }
+
+   return std::move( image_view ).value();
+}
