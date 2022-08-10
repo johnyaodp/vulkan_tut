@@ -11,7 +11,7 @@
 #include <GLFW/glfw3native.h>
 #include <glm/glm.hpp>
 
-using namespace datapath::vulkan_utils;
+using namespace datapath;
 
 extern const bool enableValidationLayers;
 
@@ -83,7 +83,8 @@ struct Vertex
    }
 };
 
-struct UniformBufferObject {
+struct UniformBufferObject
+{
    glm::mat4 model;
    glm::mat4 view;
    glm::mat4 proj;
@@ -122,36 +123,35 @@ private:
    // Members
    GLFWwindow* window{};
 
-   datapath::vulkan_utils::VkDebugUtilsMessengerEXT_resource_t debug_messenger;
+   datapath::VkDebugUtilsMessengerEXT_resource_t debug_messenger;
 
-   datapath::vulkan_utils::vulkan_engine_t vulkan_engine{};
+   datapath::vulkan_engine_t vulkan_engine{};
 
-   datapath::vulkan_utils::dispatcher_t initial_dispatcher{
-      datapath::vulkan_utils::vulkan_engine_t::initialise_initial_dispatcher() };
+   datapath::dispatcher_t initial_dispatcher{ datapath::vulkan_engine_t::initialise_initial_dispatcher() };
 
-   datapath::vulkan_utils::VkSurfaceKHR_resource_t surface;
+   datapath::VkSurfaceKHR_resource_t surface;
 
-   std::optional<datapath::vulkan_utils::physical_device_wrapper_t> physical_device;
-   std::shared_ptr<const datapath::vulkan_utils::device_dispatcher_t> logical_device;
-   datapath::vulkan_utils::VkSwapchainKHR_resource_t swapchain;
+   std::optional<datapath::physical_device_wrapper_t> physical_device;
+   std::shared_ptr<const datapath::device_dispatcher_t> logical_device;
+   datapath::VkSwapchainKHR_resource_t swapchain;
 
-   std::optional<datapath::vulkan_utils::queue_wrapper_t> graphics_queue{};
-   std::optional<datapath::vulkan_utils::queue_wrapper_t> present_queue{};
+   std::optional<datapath::queue_wrapper_t> graphics_queue{};
+   std::optional<datapath::queue_wrapper_t> present_queue{};
 
    std::vector<VkImage> swapchain_images;
    VkFormat swapchain_image_format{};
    VkExtent2D swapchain_extent{};
 
-   std::vector<datapath::vulkan_utils::VkImageView_resource_t> swapchain_image_views;
+   std::vector<datapath::VkImageView_resource_t> swapchain_image_views;
 
    VkDescriptorSetLayout_resource_t descriptor_set_layout;
    VkPipelineLayout_resource_t pipeline_layout;
 
    VkRenderPass_resource_t render_pass;
 
-   std::vector<datapath::vulkan_utils::VkPipeline_resource_t> graphics_pipeline;
+   std::vector<datapath::VkPipeline_resource_t> graphics_pipeline;
 
-   std::vector<datapath::vulkan_utils::VkFramebuffer_resource_t> swapchain_framebuffers;
+   std::vector<datapath::VkFramebuffer_resource_t> swapchain_framebuffers;
 
    VkCommandPool_resource_shared_t command_pool;
    std::vector<command_buffer_wrapper_t> command_buffer;
@@ -162,12 +162,15 @@ private:
    VkDeviceMemory_resource_t index_buffer_memory;
    std::vector<VkBuffer_resource_t> uniform_buffers;
    std::vector<VkDeviceMemory_resource_t> uniform_buffers_memory;
-   datapath::vulkan_utils::VkDescriptorPool_resource_shared_t descriptor_pool;
-   datapath::vulkan_utils::VkDescriptorSet_resource_t descriptor_sets;
+   datapath::VkDescriptorPool_resource_shared_t descriptor_pool;
+   datapath::VkDescriptorSet_resource_t descriptor_sets;
 
-   std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> image_available_semaphores;
-   std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> render_finished_semaphores;
-   std::vector<datapath::vulkan_utils::VkFence_resource_t> in_flight_fences;
+   VkImage_resource_t texture_image;
+   VkDeviceMemory_resource_t texture_image_memory;
+
+   std::vector<datapath::VkSemaphore_resource_t> image_available_semaphores;
+   std::vector<datapath::VkSemaphore_resource_t> render_finished_semaphores;
+   std::vector<datapath::VkFence_resource_t> in_flight_fences;
    uint32_t current_frame = 0;
 
    bool framebuffer_resized{ false };
@@ -224,7 +227,7 @@ private:
    void create_instance(
       const char* appname );
    auto get_required_instance_extensions()
-      -> datapath::vulkan_utils::vk_used_extensions_t;
+      -> datapath::vk_used_extensions_t;
 
    void create_surface();
 
@@ -309,6 +312,19 @@ private:
    // Descriptors
    void create_descriptor_set_layout();
 
+   // Images
+   void create_texture_image();
+
+   auto create_image(
+      uint32_t tex_width,
+      uint32_t tex_height,
+      VkFormat format,
+      VkImageTiling tiling,
+      VkBufferUsageFlags usage,
+      VkMemoryPropertyFlags properties )
+      -> std::pair<
+         VkImage_resource_t,
+         VkDeviceMemory_resource_t>;
 
    // Drawing
    // command buffer
@@ -319,7 +335,8 @@ private:
    virtual
    void draw_frame();
 
-   void update_uniform_buffer(uint32_t current_image);
+   void update_uniform_buffer(
+      uint32_t current_image );
 
    void create_sync_objects();
 

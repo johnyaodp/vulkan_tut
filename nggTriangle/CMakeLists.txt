@@ -8,6 +8,8 @@
 
 add_executable(NggTriangle "")
 
+target_compile_options( NggTriangle PRIVATE /wd4458)
+
 target_sources(
    NggTriangle
    PRIVATE

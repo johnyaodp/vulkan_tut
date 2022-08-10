@@ -90,9 +90,11 @@ include_directories("${VULKAN_SDK}/Include")
 
 set(GLFW_PACKAGE "C:/GL/glfw")
 set(GLM_PACKAGE "C:/GL/glm")
+set(STB_PACKAGE "G:/3rdParties/stb")
 
 include_directories("${GLFW_PACKAGE}/include")
 include_directories("${GLM_PACKAGE}")
+include_directories("${STB_PACKAGE}")
 
 
 #___________________________________________________________________________________________________

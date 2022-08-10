@@ -1,6 +1,6 @@
 #include "vulkan_glfw_wrapper.h"
 
-using namespace datapath::vulkan_utils;
+using namespace datapath;
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -13,7 +13,8 @@ using namespace datapath::vulkan_utils;
 #include <stdexcept>
 #include <vector>
 
-#pragma warning( disable : 4458 )
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -80,6 +81,7 @@ void vulkan_wrapper::init_vulkan(
    create_framebuffers();
 
    create_command_pool();
+   create_texture_image();
    create_vertex_buffer();
    create_index_buffer();
    create_uniform_buffers();
@@ -1541,7 +1543,7 @@ void vulkan_wrapper::create_descriptor_sets()
       max_frames_in_flight,
       descriptor_set_layout.get() );
 
-   datapath::vulkan_utils::DPVkDescriptorSetAllocateInfo_t alloc_info{
+   datapath::DPVkDescriptorSetAllocateInfo_t alloc_info{
       .descriptor_pool = descriptor_pool,
       .set_layouts = layouts };
 
@@ -1578,4 +1580,121 @@ void vulkan_wrapper::create_descriptor_sets()
 
       ++i;
    }
+}
+
+// Images
+void vulkan_wrapper::create_texture_image()
+{
+   int tex_width, tex_height, tex_channels;
+   stbi_uc* pixels =
+      stbi_load( "textures/texture.jpg", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha );
+   VkDeviceSize image_size = tex_width * tex_height * 4;
+
+   if ( !pixels )
+   {
+      throw std::runtime_error( "failed to load texture image!" );
+   }
+
+   //
+   VkBuffer_resource_t staging_buffer;
+   VkDeviceMemory_resource_t staging_buffer_memory;
+
+   std::tie( staging_buffer, staging_buffer_memory ) =
+      create_buffer(
+         image_size,
+         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT );
+
+   void* data;
+   [[maybe_unused]] auto result =
+      logical_device->vkMapMemory(
+         staging_buffer_memory.get(),
+         0,
+         image_size,
+         0,
+         &data );
+   memcpy( data, pixels, static_cast<size_t>( image_size ) );
+   logical_device->vkUnmapMemory(
+      staging_buffer_memory.get() );
+
+   stbi_image_free( pixels );
+
+
+   //
+   std::tie( texture_image, texture_image_memory ) =
+      create_image(
+         tex_width,
+         tex_height,
+         VK_FORMAT_R8G8B8A8_SRGB,
+         VK_IMAGE_TILING_OPTIMAL,
+         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+
+}
+
+auto vulkan_wrapper::create_image(
+   uint32_t tex_width,
+   uint32_t tex_height,
+   VkFormat format,
+   VkImageTiling tiling,
+   VkBufferUsageFlags usage,
+   VkMemoryPropertyFlags properties )
+   -> std::pair<
+      VkImage_resource_t,
+      VkDeviceMemory_resource_t>
+{
+   VkImageCreateInfo image_info{
+      .sType = get_sType<VkImageCreateInfo>(),
+      .flags = 0,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .format = format,
+      .extent = { static_cast<uint32_t>( tex_width ), static_cast<uint32_t>( tex_height ), 1 },
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = tiling,
+      .usage = usage,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED };
+
+   auto image = logical_device->vkCreateImage( image_info );
+
+   if ( image.holds_error() )
+   {
+      throw std::runtime_error( "failed to create image!" );
+   }
+
+
+   // Memory requirements
+   VkMemoryRequirements mem_requirements = logical_device->vkGetImageMemoryRequirements( *image.value() );
+
+   // Memory allocation
+   VkMemoryAllocateInfo alloc_info{
+      .sType = get_sType<VkMemoryAllocateInfo>(),
+      .allocationSize = mem_requirements.size,
+      .memoryTypeIndex = find_memory_type( mem_requirements.memoryTypeBits, properties ) };
+
+   auto buffer_memory = logical_device->vkAllocateMemory( alloc_info );
+
+   if ( buffer_memory.holds_error() )
+   {
+      throw std::runtime_error( "failed to allocate image memory!" );
+   }
+
+   auto result =
+      logical_device->vkBindImageMemory(
+         image.value().get(),
+         buffer_memory.value().get(),
+         0 );
+
+   if ( result != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to bind buffer and alloced memory together!" );
+   }
+
+   return
+      std::pair<VkImage_resource_t, VkDeviceMemory_resource_t>(
+         std::move( image ).value(),
+         std::move( buffer_memory ).value() );
 }
