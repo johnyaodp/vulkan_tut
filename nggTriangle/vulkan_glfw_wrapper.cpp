@@ -83,6 +83,7 @@ void vulkan_wrapper::init_vulkan(
    create_command_pool();
    create_texture_image();
    create_texture_image_view();
+   create_texture_sampler();
    create_vertex_buffer();
    create_index_buffer();
    create_uniform_buffers();
@@ -211,7 +212,9 @@ auto vulkan_wrapper::is_device_suitable(
 
    bool extensionsSupported = check_device_extension_support( device );
 
-   return indices.isComplete() && extensionsSupported;
+   VkPhysicalDeviceFeatures supportedFeatures = device.vkGetPhysicalDeviceFeatures();
+
+   return indices.isComplete() && extensionsSupported && supportedFeatures.samplerAnisotropy;
 }
 
 auto vulkan_wrapper::check_device_extension_support(
@@ -292,6 +295,7 @@ void vulkan_wrapper::create_logical_device()
    }
 
    VkPhysicalDeviceFeatures device_features{};
+   device_features.samplerAnisotropy = VK_TRUE;
 
    std::vector<const char*> c_device_extensions;
    c_device_extensions.reserve(
@@ -1887,4 +1891,39 @@ auto vulkan_wrapper::create_image_view(
    }
 
    return std::move( image_view ).value();
+}
+
+void vulkan_wrapper::create_texture_sampler()
+{
+   auto properties = physical_device->vkGetPhysicalDeviceProperties();
+
+   VkSamplerCreateInfo samplerInfo{};
+   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+   samplerInfo.magFilter = VK_FILTER_LINEAR;
+   samplerInfo.minFilter = VK_FILTER_LINEAR;
+   samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+   
+   samplerInfo.anisotropyEnable = VK_TRUE;
+   samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+   //samplerInfo.anisotropyEnable = VK_FALSE;  // Or disable anisotropy
+   //samplerInfo.maxAnisotropy = 1.0f;
+   
+   samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+   samplerInfo.unnormalizedCoordinates = VK_FALSE;
+   samplerInfo.compareEnable = VK_FALSE;
+   samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+   samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+   samplerInfo.mipLodBias = 0.0f;
+   samplerInfo.minLod = 0.0f;
+   samplerInfo.maxLod = 0.0f;
+
+   auto result = logical_device->vkCreateSampler( samplerInfo );
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create texture sampler!" );
+   }
+
+   texture_sampler = std::move( result ).value();
 }

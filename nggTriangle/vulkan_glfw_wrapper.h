@@ -189,6 +189,7 @@ private:
    VkImage_resource_t texture_image;
    VkDeviceMemory_resource_t texture_image_memory;
    VkImageView_resource_t texture_image_view;
+   VkSampler_resource_t texture_sampler;
 
    std::vector<datapath::VkSemaphore_resource_t> image_available_semaphores;
    std::vector<datapath::VkSemaphore_resource_t> render_finished_semaphores;
@@ -337,6 +338,7 @@ private:
    // Images
    void create_texture_image();
    void create_texture_image_view();
+   void create_texture_sampler();
 
    auto create_image_view(VkImage image, VkFormat format)
       -> VkImageView_resource_t;
