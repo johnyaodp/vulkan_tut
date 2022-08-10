@@ -90,6 +90,27 @@ struct UniformBufferObject
    glm::mat4 proj;
 };
 
+class single_time_command_t
+{
+public:
+   single_time_command_t(
+      std::shared_ptr<const datapath::device_dispatcher_t> logical_device,
+      datapath::queue_wrapper_t& graphics_queue,
+      VkCommandPool_resource_shared_t& command_pool );
+
+   auto operator()()
+      -> const command_buffer_wrapper_t&;
+
+   ~single_time_command_t();
+
+private:
+   std::shared_ptr<const datapath::device_dispatcher_t> logical_device;
+   datapath::queue_wrapper_t& graphics_queue;
+   VkCommandPool_resource_shared_t& command_pool;
+   std::vector<command_buffer_wrapper_t> command_buffers;
+};
+
+
 class vulkan_wrapper
 {
 public:
@@ -325,6 +346,20 @@ private:
       -> std::pair<
          VkImage_resource_t,
          VkDeviceMemory_resource_t>;
+
+   // Layout transitions
+   void transition_image_layout(
+      VkImage image,
+      VkFormat format,
+      VkImageLayout oldLayout,
+      VkImageLayout newLayout );
+
+   void copy_buffer_to_image(
+      VkBuffer buffer,
+      VkImage image,
+      uint32_t width,
+      uint32_t height );
+
 
    // Drawing
    // command buffer

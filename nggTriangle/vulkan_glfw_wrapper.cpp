@@ -1372,61 +1372,17 @@ void vulkan_wrapper::copy_buffer(
    VkBuffer dstBuffer,
    VkDeviceSize size )
 {
-   DPVkCommandBufferAllocateInfo_t command_buffer_alloc_info{
-      .command_pool = command_pool,
-      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-      .command_buffer_count = 1 };
-
-
-   auto command_buffer_result = logical_device->vkAllocateCommandBuffers( command_buffer_alloc_info );
-   if ( command_buffer_result.holds_error() )
-   {
-      throw std::runtime_error( "failed to alloc command buffer!" );
-   }
-
-   const command_buffer_wrapper_t& command_buffer = command_buffer_result.value().front();
-
-   // Begin recording command
-   VkCommandBufferBeginInfo begin_info{
-      .sType = get_sType<VkCommandBufferBeginInfo>(),
-      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-      .pInheritanceInfo = nullptr   // Optional
-   };
-
-   if ( command_buffer.vkBeginCommandBuffer( begin_info ) != VK_SUCCESS )
-   {
-      throw std::runtime_error( "failed to begin recording command buffer!" );
-   }
+   single_time_command_t command_buffer( logical_device, graphics_queue.value(), command_pool );
 
    VkBufferCopy copy_region{
       .srcOffset = 0,   // Optional
       .dstOffset = 0,   // Optional
       .size = size };
 
-   command_buffer.vkCmdCopyBuffer(
+   command_buffer().vkCmdCopyBuffer(
       srcBuffer,
       dstBuffer,
       std::span<VkBufferCopy>( &copy_region, 1 ) );
-
-   if ( command_buffer.vkEndCommandBuffer() != VK_SUCCESS )
-   {
-      throw std::runtime_error( "failed to record command buffer!" );
-   }
-
-   VkCommandBuffer command_buffer_handle = command_buffer.handle();
-   VkSubmitInfo submit_info{
-      .sType = get_sType<VkSubmitInfo>(),
-      .commandBufferCount = 1,
-      .pCommandBuffers = &command_buffer_handle };
-
-   auto result =
-      graphics_queue->vkQueueSubmit(
-         std::span<const VkSubmitInfo>( &submit_info, 1 ),
-         VK_NULL_HANDLE );
-   result = graphics_queue->vkQueueWaitIdle();
-
-   // logical_device->vkFreeCommandBuffers(*command_pool, std::span<VkCommandBuffer>(&command_buffer_handle,
-   // 1));
 }
 
 void vulkan_wrapper::create_descriptor_set_layout()
@@ -1630,9 +1586,27 @@ void vulkan_wrapper::create_texture_image()
          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
+   transition_image_layout(
+      texture_image.get(),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL );
 
+   copy_buffer_to_image(
+      *staging_buffer,
+      *texture_image,
+      static_cast<uint32_t>( tex_width ),
+      static_cast<uint32_t>( tex_height ) );
+
+   transition_image_layout(
+      texture_image.get(),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL );
 }
 
+
+//_____________________________________________________________________________
 auto vulkan_wrapper::create_image(
    uint32_t tex_width,
    uint32_t tex_height,
@@ -1698,3 +1672,207 @@ auto vulkan_wrapper::create_image(
          std::move( image ).value(),
          std::move( buffer_memory ).value() );
 }
+
+
+//______________________________________________________________________________
+
+single_time_command_t::single_time_command_t(
+   std::shared_ptr<const datapath::device_dispatcher_t> logical_device,
+   datapath::queue_wrapper_t& graphics_queue,
+   VkCommandPool_resource_shared_t& command_pool )
+   : logical_device( logical_device ),
+     graphics_queue( graphics_queue ),
+     command_pool( command_pool )
+{
+   DPVkCommandBufferAllocateInfo_t command_buffer_alloc_info{
+      .command_pool = command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .command_buffer_count = 1 };
+
+   auto command_buffer_result = logical_device->vkAllocateCommandBuffers( command_buffer_alloc_info );
+   if ( command_buffer_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to alloc command buffer!" );
+   }
+
+   const command_buffer_wrapper_t& command_buffer = command_buffer_result.value().front();
+
+   // Begin recording command
+   VkCommandBufferBeginInfo begin_info{
+      .sType = get_sType<VkCommandBufferBeginInfo>(),
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .pInheritanceInfo = nullptr   // Optional
+   };
+
+   if ( command_buffer.vkBeginCommandBuffer( begin_info ) != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to begin recording command buffer!" );
+   }
+
+   command_buffers = std::move( command_buffer_result ).value();
+}
+
+auto single_time_command_t::operator()()
+   -> const command_buffer_wrapper_t&
+{
+   return command_buffers.front();
+}
+
+single_time_command_t::~single_time_command_t()
+{
+   const auto& command_buffer = ( *this )();
+
+   auto result = command_buffer.vkEndCommandBuffer();
+
+   VkCommandBuffer command_buffer_handle = command_buffer.handle();
+   VkSubmitInfo submit_info{
+      .sType = get_sType<VkSubmitInfo>(),
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer_handle };
+
+   result =
+      graphics_queue.vkQueueSubmit(
+         std::span<const VkSubmitInfo>( &submit_info, 1 ),
+         VK_NULL_HANDLE );
+   result = graphics_queue.vkQueueWaitIdle();
+}
+
+
+#if false
+auto vulkan_wrapper::begin_single_time_commands()
+   -> std::vector<command_buffer_wrapper_t>
+{
+   DPVkCommandBufferAllocateInfo_t command_buffer_alloc_info{
+      .command_pool = command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .command_buffer_count = 1 };
+
+   auto command_buffer_result = logical_device->vkAllocateCommandBuffers( command_buffer_alloc_info );
+   if ( command_buffer_result.holds_error() )
+   {
+      throw std::runtime_error( "failed to alloc command buffer!" );
+   }
+
+   const command_buffer_wrapper_t& command_buffer = command_buffer_result.value().front();
+
+   // Begin recording command
+   VkCommandBufferBeginInfo begin_info{
+      .sType = get_sType<VkCommandBufferBeginInfo>(),
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .pInheritanceInfo = nullptr   // Optional
+   };
+
+   if ( command_buffer.vkBeginCommandBuffer( begin_info ) != VK_SUCCESS )
+   {
+      throw std::runtime_error( "failed to begin recording command buffer!" );
+   }
+
+   return std::move( command_buffer_result ).value();
+}
+
+void vulkan_wrapper::end_single_time_commands(
+   const command_buffer_wrapper_t& command_buffer )
+{
+   auto result = command_buffer.vkEndCommandBuffer();
+
+   VkCommandBuffer command_buffer_handle = command_buffer.handle();
+   VkSubmitInfo submit_info{
+      .sType = get_sType<VkSubmitInfo>(),
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer_handle };
+
+   result =
+      graphics_queue->vkQueueSubmit(
+         std::span<const VkSubmitInfo>( &submit_info, 1 ),
+         VK_NULL_HANDLE );
+   result = graphics_queue->vkQueueWaitIdle();
+}
+#endif
+
+
+//_____________________________________________________________________________
+void vulkan_wrapper::transition_image_layout(
+   VkImage image,
+   [[maybe_unused]] VkFormat format,
+   VkImageLayout oldLayout,
+   VkImageLayout newLayout )
+{
+   single_time_command_t command_buffer( logical_device, graphics_queue.value(), command_pool );
+
+   VkImageMemoryBarrier barrier{};
+   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+   barrier.oldLayout = oldLayout;
+   barrier.newLayout = newLayout;
+   barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+   barrier.image = image;
+   barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   barrier.subresourceRange.baseMipLevel = 0;
+   barrier.subresourceRange.levelCount = 1;
+   barrier.subresourceRange.baseArrayLayer = 0;
+   barrier.subresourceRange.layerCount = 1;
+
+   VkPipelineStageFlags sourceStage;
+   VkPipelineStageFlags destinationStage;
+
+   if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+      barrier.srcAccessMask = 0;
+      barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+      sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+   }
+   else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+      sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+      destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+   }
+   else {
+      throw std::invalid_argument("unsupported layout transition!");
+   }
+
+
+   std::vector<VkMemoryBarrier> MemoryBarriers;
+   std::vector<VkBufferMemoryBarrier> BufferMemoryBarriers;
+
+   command_buffer().vkCmdPipelineBarrier(
+      sourceStage,
+      destinationStage,
+      0,
+      MemoryBarriers,
+      BufferMemoryBarriers,
+      std::span( &barrier, 1 ) );
+}
+
+void vulkan_wrapper::copy_buffer_to_image(
+   VkBuffer buffer,
+   VkImage image,
+   uint32_t width,
+   uint32_t height )
+{
+   single_time_command_t command_buffer( logical_device, graphics_queue.value(), command_pool );
+
+   VkBufferImageCopy region{};
+   region.bufferOffset = 0;
+   region.bufferRowLength = 0;
+   region.bufferImageHeight = 0;
+
+   region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   region.imageSubresource.mipLevel = 0;
+   region.imageSubresource.baseArrayLayer = 0;
+   region.imageSubresource.layerCount = 1;
+
+   region.imageOffset = { 0, 0, 0 };
+   region.imageExtent = { width, height, 1 };
+
+   command_buffer().vkCmdCopyBufferToImage(
+      buffer,
+      image,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      std::span( &region, 1 ) );
+}
+
+
+//______________________________________________________________________________
