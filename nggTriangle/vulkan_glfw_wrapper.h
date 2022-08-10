@@ -162,6 +162,8 @@ private:
    VkDeviceMemory_resource_t index_buffer_memory;
    std::vector<VkBuffer_resource_t> uniform_buffers;
    std::vector<VkDeviceMemory_resource_t> uniform_buffers_memory;
+   datapath::vulkan_utils::VkDescriptorPool_resource_shared_t descriptor_pool;
+   datapath::vulkan_utils::VkDescriptorSet_resource_t descriptor_sets;
 
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> image_available_semaphores;
    std::vector<datapath::vulkan_utils::VkSemaphore_resource_t> render_finished_semaphores;
@@ -284,6 +286,8 @@ private:
    void create_vertex_buffer();
    void create_index_buffer();
    void create_uniform_buffers();
+   void create_descriptor_pool();
+   void create_descriptor_sets();
 
    auto create_buffer(
       VkDeviceSize size,

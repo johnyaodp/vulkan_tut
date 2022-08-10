@@ -83,6 +83,8 @@ void vulkan_wrapper::init_vulkan(
    create_vertex_buffer();
    create_index_buffer();
    create_uniform_buffers();
+   create_descriptor_pool();
+   create_descriptor_sets();
    create_command_buffer();
    create_sync_objects();
 }
@@ -690,7 +692,7 @@ void vulkan_wrapper::create_graphics_pipeline()
       .rasterizerDiscardEnable = VK_FALSE,
       .polygonMode = VK_POLYGON_MODE_FILL,
       .cullMode = VK_CULL_MODE_BACK_BIT,
-      .frontFace = VK_FRONT_FACE_CLOCKWISE,
+      .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
       .depthBiasEnable = VK_FALSE,
       .lineWidth = 1.0f   // NOLINT (readability-uppercase-literal-suffix
    };
@@ -1004,6 +1006,15 @@ void vulkan_wrapper::record_command_buffer(
       0,
       VK_INDEX_TYPE_UINT16 );
 
+   std::vector<uint32_t> dynamic_offsets{};
+
+   command_buffer.vkCmdBindDescriptorSets(
+      VK_PIPELINE_BIND_POINT_GRAPHICS,
+      *pipeline_layout,
+      0,
+      std::span( &descriptor_sets.get()[current_frame], 1 ),
+      dynamic_offsets );
+
    // Draw command buffer
    // command_buffer.vkCmdDraw( 3, 1, 0, 0 );
    command_buffer.vkCmdDrawIndexed(
@@ -1074,7 +1085,7 @@ void vulkan_wrapper::draw_frame()
          image_available_semaphores[current_frame].get(),
          VK_NULL_HANDLE );
 
-   //update_uniform_buffer( current_frame );
+   update_uniform_buffer( current_frame );
 
    // Only reset the fence if we are submitting work
    if ( logical_device->vkResetFences( fences ) != VK_SUCCESS )
@@ -1502,4 +1513,69 @@ void vulkan_wrapper::update_uniform_buffer(
          &data );
    memcpy( data, &ubo, sizeof( ubo ) );
    logical_device->vkUnmapMemory( uniform_buffers_memory[current_frame] );
+}
+
+void vulkan_wrapper::create_descriptor_pool()
+{
+   VkDescriptorPoolSize pool_size{
+      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .descriptorCount = static_cast<uint32_t>( max_frames_in_flight ) };
+
+   VkDescriptorPoolCreateInfo pool_info{
+      .sType = get_sType<VkDescriptorPoolCreateInfo>(),
+      .maxSets = static_cast<uint32_t>( max_frames_in_flight ),
+      .poolSizeCount = 1,
+      .pPoolSizes = &pool_size };
+
+   auto result = logical_device->vkCreateDescriptorPool( pool_info );
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to create descriptor pool!" );
+   }
+   descriptor_pool = std::move( result ).value();
+}
+
+void vulkan_wrapper::create_descriptor_sets()
+{
+   std::vector<VkDescriptorSetLayout> layouts(
+      max_frames_in_flight,
+      descriptor_set_layout.get() );
+
+   datapath::vulkan_utils::DPVkDescriptorSetAllocateInfo_t alloc_info{
+      .descriptor_pool = descriptor_pool,
+      .set_layouts = layouts };
+
+   auto result = logical_device->vkAllocateDescriptorSets( alloc_info );
+   if ( result.holds_error() )
+   {
+      throw std::runtime_error( "failed to allocate descriptor sets!" );
+   }
+
+   descriptor_sets = std::move( result ).value();
+
+   for ( size_t i = 0;
+         auto& uniform_buffer : uniform_buffers )
+   {
+      VkDescriptorBufferInfo buffer_info{
+         .buffer = uniform_buffer.get(),
+         .offset = 0,
+         .range = sizeof( UniformBufferObject ) };
+
+      VkWriteDescriptorSet descriptor_write{
+         .sType = get_sType<VkWriteDescriptorSet>(),
+         .dstSet = descriptor_sets.get()[i],
+         .dstBinding = 0,
+         .dstArrayElement = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+         .pBufferInfo = &buffer_info };
+
+      std::vector<VkCopyDescriptorSet> copy_descriptor_set{};
+
+      logical_device->vkUpdateDescriptorSets(
+         std::span( &descriptor_write, 1 ),
+         copy_descriptor_set );
+
+      ++i;
+   }
 }
