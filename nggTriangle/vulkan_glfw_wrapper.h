@@ -9,6 +9,9 @@
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
 using namespace datapath;
@@ -46,7 +49,7 @@ struct SwapChainSupportDetails
 
 struct Vertex
 {
-   glm::vec2 pos;
+   glm::vec3 pos;
    glm::vec3 color;
    glm::vec2 texCoord;
 
@@ -72,7 +75,7 @@ struct Vertex
 
       attribute_descriptions[0].binding = 0;
       attribute_descriptions[0].location = 0;
-      attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+      attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
       attribute_descriptions[0].offset = offsetof( Vertex, pos );
 
       attribute_descriptions[1].binding = 0;
@@ -83,7 +86,7 @@ struct Vertex
       attribute_descriptions[2].binding = 0;
       attribute_descriptions[2].location = 2;
       attribute_descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-      attribute_descriptions[2].offset = offsetof(Vertex, texCoord);
+      attribute_descriptions[2].offset = offsetof( Vertex, texCoord );
 
       return attribute_descriptions;
    }
@@ -196,6 +199,10 @@ private:
    VkDeviceMemory_resource_t texture_image_memory;
    VkImageView_resource_t texture_image_view;
    VkSampler_resource_t texture_sampler;
+
+   VkImage_resource_t depth_image;
+   VkDeviceMemory_resource_t depth_image_memory;
+   VkImageView_resource_t depth_image_view;
 
    std::vector<datapath::VkSemaphore_resource_t> image_available_semaphores;
    std::vector<datapath::VkSemaphore_resource_t> render_finished_semaphores;
@@ -346,7 +353,10 @@ private:
    void create_texture_image_view();
    void create_texture_sampler();
 
-   auto create_image_view(VkImage image, VkFormat format)
+   auto create_image_view(
+      VkImage image,
+      VkFormat format,
+      VkImageAspectFlags aspectFlags )
       -> VkImageView_resource_t;
 
    auto create_image(
@@ -373,6 +383,15 @@ private:
       uint32_t width,
       uint32_t height );
 
+   VkFormat find_depth_format();
+   void create_depth_resources();
+   static
+   bool has_stencil_component( VkFormat format );
+
+   VkFormat find_supported_format(
+      const std::vector<VkFormat>& candidates,
+      VkImageTiling tiling,
+      VkFormatFeatureFlags features );
 
    // Drawing
    // command buffer
