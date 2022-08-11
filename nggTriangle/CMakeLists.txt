@@ -8,17 +8,15 @@
 
 add_executable(NggTriangle "")
 
-target_compile_options( NggTriangle PRIVATE /wd4458 /DTINYOBJLOADER_IMPLEMENTATION)
+target_compile_options( NggTriangle PRIVATE /wd4458)
 
 target_sources(
    NggTriangle
    PRIVATE
       vulkan_glfw_wrapper.h
       vulkan_glfw_wrapper.cpp
-      vulkan_tutorial.h
-      vulkan_tutorial.cpp
+      3rdPartyLibImp.cpp
       main.cpp)
-
 
 
 #link_directories("${NEXTGENGRAPHICS_LIB}")

@@ -16,8 +16,6 @@ using namespace datapath;
 
 // #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
 
@@ -590,7 +588,7 @@ void vulkan_wrapper::create_image_views()
    for ( const auto& swapchain_image : swapchain_images )
    {
       swapchain_image_views.emplace_back(
-         create_image_view( swapchain_image, swapchain_image_format, VK_IMAGE_ASPECT_COLOR_BIT ) );
+         create_image_view( swapchain_image, swapchain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1 ) );
    }
 }
 
@@ -1574,6 +1572,7 @@ void vulkan_wrapper::create_descriptor_sets()
 auto vulkan_wrapper::create_image(
    uint32_t tex_width,
    uint32_t tex_height,
+   uint32_t mip_levels,
    VkFormat format,
    VkImageTiling tiling,
    VkBufferUsageFlags usage,
@@ -1588,7 +1587,7 @@ auto vulkan_wrapper::create_image(
       .imageType = VK_IMAGE_TYPE_2D,
       .format = format,
       .extent = { static_cast<uint32_t>( tex_width ), static_cast<uint32_t>( tex_height ), 1 },
-      .mipLevels = 1,
+      .mipLevels = mip_levels,
       .arrayLayers = 1,
       .samples = VK_SAMPLE_COUNT_1_BIT,
       .tiling = tiling,
@@ -1647,6 +1646,20 @@ single_time_command_t::single_time_command_t(
    : logical_device( logical_device ),
      graphics_queue( graphics_queue ),
      command_pool( command_pool )
+{
+   begin_command();
+}
+
+single_time_command_t::single_time_command_t(
+   vulkan_wrapper& vulkan )
+   : logical_device( vulkan.logical_device ),
+     graphics_queue( vulkan.graphics_queue.value() ),
+     command_pool( vulkan.command_pool )
+{
+   begin_command();
+}
+
+void single_time_command_t::begin_command()
 {
    DPVkCommandBufferAllocateInfo_t command_buffer_alloc_info{
       .command_pool = command_pool,
@@ -1759,7 +1772,8 @@ void vulkan_wrapper::transition_image_layout(
    VkImage image,
    VkFormat format,
    VkImageLayout oldLayout,
-   VkImageLayout newLayout )
+   VkImageLayout newLayout,
+   uint32_t mipLevels )
 {
    single_time_command_t command_buffer( logical_device, graphics_queue.value(), command_pool );
 
@@ -1771,7 +1785,7 @@ void vulkan_wrapper::transition_image_layout(
    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
    barrier.image = image;
    barrier.subresourceRange.baseMipLevel = 0;
-   barrier.subresourceRange.levelCount = 1;
+   barrier.subresourceRange.levelCount = mipLevels;
    barrier.subresourceRange.baseArrayLayer = 0;
    barrier.subresourceRange.layerCount = 1;
 
@@ -1888,6 +1902,11 @@ void vulkan_wrapper::create_texture_image()
       throw std::runtime_error( "failed to load texture image!" );
    }
 
+   mip_levels = static_cast<uint32_t>( std::floor(
+                   std::log2(
+                      std::max( tex_width, tex_height ) ) ) ) +
+                1;
+
    //
    VkBuffer_resource_t staging_buffer;
    VkDeviceMemory_resource_t staging_buffer_memory;
@@ -1918,6 +1937,7 @@ void vulkan_wrapper::create_texture_image()
       create_image(
          tex_width,
          tex_height,
+         mip_levels,
          VK_FORMAT_R8G8B8A8_SRGB,
          VK_IMAGE_TILING_OPTIMAL,
          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -1927,7 +1947,8 @@ void vulkan_wrapper::create_texture_image()
       texture_image.get(),
       VK_FORMAT_R8G8B8A8_SRGB,
       VK_IMAGE_LAYOUT_UNDEFINED,
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL );
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      mip_levels );
 
    copy_buffer_to_image(
       *staging_buffer,
@@ -1939,21 +1960,26 @@ void vulkan_wrapper::create_texture_image()
       texture_image.get(),
       VK_FORMAT_R8G8B8A8_SRGB,
       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL );
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      mip_levels );
+
+   //
+   generate_mipmaps( *texture_image, VK_FORMAT_R8G8B8A8_SRGB, tex_width, tex_height, mip_levels );
 }
 
 
 void vulkan_wrapper::create_texture_image_view()
 {
    texture_image_view =
-      create_image_view( *texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT );
+      create_image_view( *texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels );
 }
 
 
 auto vulkan_wrapper::create_image_view(
    VkImage image,
    VkFormat format,
-   VkImageAspectFlags aspectFlags )
+   VkImageAspectFlags aspectFlags,
+   uint32_t mipLevels )
    -> VkImageView_resource_t
 {
    VkImageViewCreateInfo viewInfo{};
@@ -1963,7 +1989,7 @@ auto vulkan_wrapper::create_image_view(
    viewInfo.format = format;
    viewInfo.subresourceRange.aspectMask = aspectFlags;   // VK_IMAGE_ASPECT_COLOR_BIT;
    viewInfo.subresourceRange.baseMipLevel = 0;
-   viewInfo.subresourceRange.levelCount = 1;
+   viewInfo.subresourceRange.levelCount = mipLevels;
    viewInfo.subresourceRange.baseArrayLayer = 0;
    viewInfo.subresourceRange.layerCount = 1;
 
@@ -2000,8 +2026,8 @@ void vulkan_wrapper::create_texture_sampler()
    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
    samplerInfo.mipLodBias = 0.0f;
-   samplerInfo.minLod = 0.0f;
-   samplerInfo.maxLod = 0.0f;
+   samplerInfo.minLod = 0.0f;   // static_cast<float>(mip_levels) / 2.0f;
+   samplerInfo.maxLod = static_cast<float>( mip_levels );
 
    auto result = logical_device->vkCreateSampler( samplerInfo );
    if ( result.holds_error() )
@@ -2020,6 +2046,7 @@ void vulkan_wrapper::create_depth_resources()
       create_image(
          swapchain_extent.width,
          swapchain_extent.height,
+         1,
          depth_format,
          VK_IMAGE_TILING_OPTIMAL,
          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -2029,14 +2056,16 @@ void vulkan_wrapper::create_depth_resources()
       create_image_view(
          depth_image.get(),
          depth_format,
-         VK_IMAGE_ASPECT_DEPTH_BIT );
+         VK_IMAGE_ASPECT_DEPTH_BIT,
+         1 );
 
    // Optional
    transition_image_layout(
       depth_image,
       depth_format,
       VK_IMAGE_LAYOUT_UNDEFINED,
-      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL );
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      1 );
 }
 
 VkFormat vulkan_wrapper::find_supported_format(
@@ -2124,7 +2153,117 @@ void vulkan_wrapper::load_model()
             uniqueVertices[vertex] = static_cast<uint32_t>( vertices.size() );
             vertices.push_back( vertex );
          }
-         g_indices.push_back(uniqueVertices[vertex]);
+         g_indices.push_back( uniqueVertices[vertex] );
       }
    }
+}
+
+void vulkan_wrapper::generate_mipmaps(
+   VkImage image,
+   VkFormat imageFormat,
+   int32_t texWidth,
+   int32_t texHeight,
+   uint32_t mipLevels )
+{
+   // Check if image format supports linear blitting
+   VkFormatProperties formatProperties = physical_device->vkGetPhysicalDeviceFormatProperties( imageFormat );
+
+   if ( !( formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT ) )
+   {
+      throw std::runtime_error( "texture image format does not support linear blitting!" );
+   }
+
+   single_time_command_t command_buffer( *this );
+
+   VkImageMemoryBarrier barrier{};
+   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+   barrier.image = image;
+   barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+   barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   barrier.subresourceRange.baseArrayLayer = 0;
+   barrier.subresourceRange.layerCount = 1;
+   barrier.subresourceRange.levelCount = 1;
+
+   int32_t mipWidth = texWidth;
+   int32_t mipHeight = texHeight;
+   std::vector<VkMemoryBarrier> MemoryBarriers;
+   std::vector<VkBufferMemoryBarrier> BufferMemoryBarriers;
+
+   for ( uint32_t i = 1;
+         i < mipLevels;
+         i++ )
+   {
+      barrier.subresourceRange.baseMipLevel = i - 1;
+      barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+      command_buffer().vkCmdPipelineBarrier(
+         VK_PIPELINE_STAGE_TRANSFER_BIT,
+         VK_PIPELINE_STAGE_TRANSFER_BIT,
+         0,
+         MemoryBarriers,
+         BufferMemoryBarriers,
+         std::span( &barrier, 1 ) );
+
+      VkImageBlit blit{};
+      blit.srcOffsets[0] = { 0, 0, 0 };
+      blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+      blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      blit.srcSubresource.mipLevel = i - 1;
+      blit.srcSubresource.baseArrayLayer = 0;
+      blit.srcSubresource.layerCount = 1;
+      blit.dstOffsets[0] = { 0, 0, 0 };
+      blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+      blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      blit.dstSubresource.mipLevel = i;
+      blit.dstSubresource.baseArrayLayer = 0;
+      blit.dstSubresource.layerCount = 1;
+
+      command_buffer().vkCmdBlitImage(
+         image,
+         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+         image,
+         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         std::span( &blit, 1 ),
+         VK_FILTER_LINEAR );
+
+      barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+      barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+      command_buffer().vkCmdPipelineBarrier(
+         VK_PIPELINE_STAGE_TRANSFER_BIT,
+         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+         0,
+         MemoryBarriers,
+         BufferMemoryBarriers,
+         std::span( &barrier, 1 ) );
+
+      if ( mipWidth > 1 )
+      {
+         mipWidth /= 2;
+      }
+      if ( mipHeight > 1 )
+      {
+         mipHeight /= 2;
+      }
+   };
+
+   barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+   barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+   barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+   barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+   command_buffer().vkCmdPipelineBarrier(
+      VK_PIPELINE_STAGE_TRANSFER_BIT,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      0,
+      MemoryBarriers,
+      BufferMemoryBarriers,
+      std::span( &barrier, 1 ) );
 }

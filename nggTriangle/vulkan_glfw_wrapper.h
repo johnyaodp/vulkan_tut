@@ -15,8 +15,8 @@
 
 #pragma warning( disable : 4201 )
 #define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/hash.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 
 using namespace datapath;
 
@@ -57,7 +57,9 @@ struct Vertex
    glm::vec3 color;
    glm::vec2 texCoord;
 
-   bool operator==(const Vertex& other) const {
+   bool operator==(
+      const Vertex& other ) const
+   {
       return pos == other.pos && color == other.color && texCoord == other.texCoord;
    }
 
@@ -100,15 +102,18 @@ struct Vertex
    }
 };
 
-namespace std {
-   template<> struct hash<Vertex> {
-      size_t operator()(Vertex const& vertex) const {
-         return ((hash<glm::vec3>()(vertex.pos) ^
-            (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-            (hash<glm::vec2>()(vertex.texCoord) << 1);
-      }
-   };
+namespace std
+{
+template <>
+struct hash<Vertex>
+{
+   size_t operator()( const Vertex& vertex ) const
+   {
+      return ( ( hash<glm::vec3>()( vertex.pos ) ^ ( hash<glm::vec3>()( vertex.color ) << 1 ) ) >> 1 ) ^
+             ( hash<glm::vec2>()( vertex.texCoord ) << 1 );
+   }
 };
+};   // namespace std
 
 struct UniformBufferObject
 {
@@ -116,6 +121,9 @@ struct UniformBufferObject
    glm::mat4 view;
    glm::mat4 proj;
 };
+
+
+class vulkan_wrapper;
 
 class single_time_command_t
 {
@@ -125,12 +133,17 @@ public:
       datapath::queue_wrapper_t& graphics_queue,
       VkCommandPool_resource_shared_t& command_pool );
 
+   single_time_command_t( vulkan_wrapper&  vulkan);
+
    auto operator()()
       -> const command_buffer_wrapper_t&;
 
    ~single_time_command_t();
 
 private:
+
+   void begin_command();
+
    std::shared_ptr<const datapath::device_dispatcher_t> logical_device;
    datapath::queue_wrapper_t& graphics_queue;
    VkCommandPool_resource_shared_t& command_pool;
@@ -166,6 +179,8 @@ public:
 protected:
 
 private:
+   friend class single_time_command_t;
+
    static constexpr int max_frames_in_flight = 2;
 
    // Members
@@ -213,6 +228,7 @@ private:
    datapath::VkDescriptorPool_resource_shared_t descriptor_pool;
    datapath::VkDescriptorSet_resource_t descriptor_sets;
 
+   uint32_t mip_levels;
    VkImage_resource_t texture_image;
    VkDeviceMemory_resource_t texture_image_memory;
    VkImageView_resource_t texture_image_view;
@@ -376,12 +392,14 @@ private:
    auto create_image_view(
       VkImage image,
       VkFormat format,
-      VkImageAspectFlags aspectFlags )
+      VkImageAspectFlags aspectFlags,
+      uint32_t mipLevels)
       -> VkImageView_resource_t;
 
    auto create_image(
       uint32_t tex_width,
       uint32_t tex_height,
+      uint32_t mip_levels,
       VkFormat format,
       VkImageTiling tiling,
       VkBufferUsageFlags usage,
@@ -395,13 +413,21 @@ private:
       VkImage image,
       VkFormat format,
       VkImageLayout oldLayout,
-      VkImageLayout newLayout );
+      VkImageLayout newLayout,
+      uint32_t mipLevels );
 
    void copy_buffer_to_image(
       VkBuffer buffer,
       VkImage image,
       uint32_t width,
       uint32_t height );
+
+   void generate_mipmaps(
+      VkImage image,
+      VkFormat imageFormat,
+      int32_t texWidth,
+      int32_t texHeight,
+      uint32_t mipLevels);
 
    VkFormat find_depth_format();
    void create_depth_resources();
