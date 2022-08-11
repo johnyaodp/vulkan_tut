@@ -24,13 +24,22 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
+   { { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f } },
+   { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
+   { { 0.5f, 0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
+   { { -0.5f, 0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
 
-const std::vector<uint16_t> g_indices = { 0, 1, 2, 2, 3, 0 };
+   { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f } },
+   { { 0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
+   { { 0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
+   { { -0.5f, 0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } } };
+
+// clang-format off
+const std::vector<uint16_t> g_indices = { 
+   0, 1, 2, 2, 3, 0, 
+   4, 5, 6, 6, 7, 4
+};
+// clang-format on
 
 // Environment depdent code: Windows
 void vulkan_wrapper::init_window(
@@ -1373,7 +1382,7 @@ void vulkan_wrapper::create_descriptor_set_layout()
    std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
    VkDescriptorSetLayoutCreateInfo layoutInfo{};
    layoutInfo.sType = get_sType<VkDescriptorSetLayoutCreateInfo>();
-   layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+   layoutInfo.bindingCount = static_cast<uint32_t>( bindings.size() );
    layoutInfo.pBindings = bindings.data();
 
    auto result = logical_device->vkCreateDescriptorSetLayout( layoutInfo );
@@ -1454,15 +1463,15 @@ void vulkan_wrapper::create_descriptor_pool()
 {
    std::array<VkDescriptorPoolSize, 2> poolSizes{};
    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-   poolSizes[0].descriptorCount = static_cast<uint32_t>(max_frames_in_flight);
+   poolSizes[0].descriptorCount = static_cast<uint32_t>( max_frames_in_flight );
    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-   poolSizes[1].descriptorCount = static_cast<uint32_t>(max_frames_in_flight);
+   poolSizes[1].descriptorCount = static_cast<uint32_t>( max_frames_in_flight );
 
    VkDescriptorPoolCreateInfo pool_info{
       .sType = get_sType<VkDescriptorPoolCreateInfo>(),
       .maxSets = static_cast<uint32_t>( max_frames_in_flight ),
-      .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-      .pPoolSizes = poolSizes.data()};
+      .poolSizeCount = static_cast<uint32_t>( poolSizes.size() ),
+      .pPoolSizes = poolSizes.data() };
 
    auto result = logical_device->vkCreateDescriptorPool( pool_info );
    if ( result.holds_error() )
@@ -1523,9 +1532,7 @@ void vulkan_wrapper::create_descriptor_sets()
 
       std::vector<VkCopyDescriptorSet> copy_descriptor_set{};
 
-      logical_device->vkUpdateDescriptorSets(
-         descriptorWrites,
-         copy_descriptor_set );
+      logical_device->vkUpdateDescriptorSets( descriptorWrites, copy_descriptor_set );
 
       ++i;
    }
@@ -1916,12 +1923,12 @@ void vulkan_wrapper::create_texture_sampler()
    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-   
+
    samplerInfo.anisotropyEnable = VK_TRUE;
    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-   //samplerInfo.anisotropyEnable = VK_FALSE;  // Or disable anisotropy
-   //samplerInfo.maxAnisotropy = 1.0f;
-   
+   // samplerInfo.anisotropyEnable = VK_FALSE;  // Or disable anisotropy
+   // samplerInfo.maxAnisotropy = 1.0f;
+
    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
    samplerInfo.unnormalizedCoordinates = VK_FALSE;
    samplerInfo.compareEnable = VK_FALSE;
@@ -1939,4 +1946,3 @@ void vulkan_wrapper::create_texture_sampler()
 
    texture_sampler = std::move( result ).value();
 }
-
