@@ -8,7 +8,7 @@
 
 add_executable(Triangle "")
 
-target_compile_options( Triangle PRIVATE /wd4100 /wd4458 /wd4459)
+target_compile_options( Triangle PRIVATE /wd4100 /wd4458 /wd4459 /wd4201)
 
 target_sources(
    Triangle
