@@ -91,10 +91,12 @@ include_directories("${VULKAN_SDK}/Include")
 set(GLFW_PACKAGE "C:/GL/glfw")
 set(GLM_PACKAGE "C:/GL/glm")
 set(STB_PACKAGE "G:/3rdParties/stb")
+set(TINYOBJ_PACKAGE "G:/3rdParties/tinyobjloader")
 
 include_directories("${GLFW_PACKAGE}/include")
 include_directories("${GLM_PACKAGE}")
 include_directories("${STB_PACKAGE}")
+include_directories("${TINYOBJ_PACKAGE}")
 
 
 #___________________________________________________________________________________________________
