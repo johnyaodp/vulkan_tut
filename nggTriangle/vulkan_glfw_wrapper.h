@@ -133,7 +133,7 @@ public:
       datapath::queue_wrapper_t& graphics_queue,
       VkCommandPool_resource_shared_t& command_pool );
 
-   single_time_command_t( vulkan_wrapper&  vulkan);
+   single_time_command_t( vulkan_wrapper& vulkan );
 
    auto operator()()
       -> const command_buffer_wrapper_t&;
@@ -141,7 +141,6 @@ public:
    ~single_time_command_t();
 
 private:
-
    void begin_command();
 
    std::shared_ptr<const datapath::device_dispatcher_t> logical_device;
@@ -228,11 +227,16 @@ private:
    datapath::VkDescriptorPool_resource_shared_t descriptor_pool;
    datapath::VkDescriptorSet_resource_t descriptor_sets;
 
+   VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
    uint32_t mip_levels;
    VkImage_resource_t texture_image;
    VkDeviceMemory_resource_t texture_image_memory;
    VkImageView_resource_t texture_image_view;
    VkSampler_resource_t texture_sampler;
+
+   VkImage_resource_t color_image;
+   VkDeviceMemory_resource_t color_image_memory;
+   VkImageView_resource_t color_image_view;
 
    VkImage_resource_t depth_image;
    VkDeviceMemory_resource_t depth_image_memory;
@@ -393,13 +397,14 @@ private:
       VkImage image,
       VkFormat format,
       VkImageAspectFlags aspectFlags,
-      uint32_t mipLevels)
+      uint32_t mipLevels )
       -> VkImageView_resource_t;
 
    auto create_image(
       uint32_t tex_width,
       uint32_t tex_height,
       uint32_t mip_levels,
+      VkSampleCountFlagBits num_samples,
       VkFormat format,
       VkImageTiling tiling,
       VkBufferUsageFlags usage,
@@ -407,6 +412,8 @@ private:
       -> std::pair<
          VkImage_resource_t,
          VkDeviceMemory_resource_t>;
+
+   void create_color_resources();
 
    // Layout transitions
    void transition_image_layout(
@@ -427,7 +434,10 @@ private:
       VkFormat imageFormat,
       int32_t texWidth,
       int32_t texHeight,
-      uint32_t mipLevels);
+      uint32_t mipLevels );
+
+   auto get_max_usable_sample_count()
+      -> VkSampleCountFlagBits;
 
    VkFormat find_depth_format();
    void create_depth_resources();

@@ -69,6 +69,7 @@ void vulkan_wrapper::init_vulkan(
    create_graphics_pipeline();
    create_command_pool();
 
+   create_color_resources();
    create_depth_resources();
    create_framebuffers();
    create_texture_image();
@@ -187,6 +188,7 @@ void vulkan_wrapper::pick_physical_device()
       if ( is_device_suitable( device ) )
       {
          physical_device = device;
+         msaa_samples = get_max_usable_sample_count();
          break;
       }
    }
@@ -195,6 +197,42 @@ void vulkan_wrapper::pick_physical_device()
    {
       throw std::runtime_error( "failed to find a suitable GPU!" );
    }
+}
+
+auto vulkan_wrapper::get_max_usable_sample_count()
+   -> VkSampleCountFlagBits
+{
+   VkPhysicalDeviceProperties physicalDeviceProperties = physical_device->vkGetPhysicalDeviceProperties();
+
+   VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts &
+                               physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+
+   if ( counts & VK_SAMPLE_COUNT_64_BIT )
+   {
+      return VK_SAMPLE_COUNT_64_BIT;
+   }
+   if ( counts & VK_SAMPLE_COUNT_32_BIT )
+   {
+      return VK_SAMPLE_COUNT_32_BIT;
+   }
+   if ( counts & VK_SAMPLE_COUNT_16_BIT )
+   {
+      return VK_SAMPLE_COUNT_16_BIT;
+   }
+   if ( counts & VK_SAMPLE_COUNT_8_BIT )
+   {
+      return VK_SAMPLE_COUNT_8_BIT;
+   }
+   if ( counts & VK_SAMPLE_COUNT_4_BIT )
+   {
+      return VK_SAMPLE_COUNT_4_BIT;
+   }
+   if ( counts & VK_SAMPLE_COUNT_2_BIT )
+   {
+      return VK_SAMPLE_COUNT_2_BIT;
+   }
+
+   return VK_SAMPLE_COUNT_1_BIT;
 }
 
 auto vulkan_wrapper::is_device_suitable(
@@ -676,8 +714,9 @@ void vulkan_wrapper::create_graphics_pipeline()
    // Multisampling
    VkPipelineMultisampleStateCreateInfo multisampling{
       .sType = get_sType<VkPipelineMultisampleStateCreateInfo>(),
-      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-      .sampleShadingEnable = VK_FALSE };
+      .rasterizationSamples = msaa_samples,
+      .sampleShadingEnable = VK_TRUE,
+      .minSampleShading = 0.2f };
 
    // Depthand stencil testing
    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
@@ -819,13 +858,13 @@ void vulkan_wrapper::create_render_pass()
    // Attachment description
    VkAttachmentDescription color_attachment{
       .format = swapchain_image_format,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .samples = msaa_samples,
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
       .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-      .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
 
    // Subpasses and attachment references
    VkAttachmentReference color_attachment_ref{
@@ -834,7 +873,7 @@ void vulkan_wrapper::create_render_pass()
 
    VkAttachmentDescription depthAttachment{};
    depthAttachment.format = find_depth_format();
-   depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+   depthAttachment.samples = msaa_samples;
    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -846,10 +885,25 @@ void vulkan_wrapper::create_render_pass()
    depthAttachmentRef.attachment = 1;
    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+   VkAttachmentDescription colorAttachmentResolve{};
+   colorAttachmentResolve.format = swapchain_image_format;
+   colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+   colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+   colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+   colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+   colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+   VkAttachmentReference colorAttachmentResolveRef{};
+   colorAttachmentResolveRef.attachment = 2;
+   colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
    VkSubpassDescription subpass{
       .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
       .colorAttachmentCount = 1,
       .pColorAttachments = &color_attachment_ref,
+      .pResolveAttachments = &colorAttachmentResolveRef,
       .pDepthStencilAttachment = &depthAttachmentRef };
 
    VkSubpassDependency dependency{
@@ -863,7 +917,10 @@ void vulkan_wrapper::create_render_pass()
       .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
 
    // Render pass
-   std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depthAttachment };
+   std::array<VkAttachmentDescription, 3> attachments = {
+      color_attachment,
+      depthAttachment,
+      colorAttachmentResolve };
 
    VkRenderPassCreateInfo render_pass_info{
       .sType = get_sType<VkRenderPassCreateInfo>(),
@@ -893,7 +950,10 @@ void vulkan_wrapper::create_framebuffers()
    for ( auto& swapchain_image_view : swapchain_image_views )
    {
       // VkImageView attachments[] = { *swapchain_image_view };
-      std::array<VkImageView, 2> attachments = { *swapchain_image_view, *depth_image_view };
+      std::array<VkImageView, 3> attachments = {
+         *color_image_view,
+         *depth_image_view,
+         *swapchain_image_view };
 
       VkFramebufferCreateInfo framebuffer_info{
          .sType = get_sType<VkFramebufferCreateInfo>(),
@@ -1168,12 +1228,15 @@ void vulkan_wrapper::recreate_swapchain()
    create_image_views();
    create_render_pass();
    create_graphics_pipeline();
+   create_color_resources();
    create_depth_resources();
    create_framebuffers();
 }
 
 void vulkan_wrapper::cleanup_swapchain()
 {
+   color_image_view.reset();
+
    depth_image_view.reset();   //???
 
    for ( auto& scfb : swapchain_framebuffers )
@@ -1573,6 +1636,7 @@ auto vulkan_wrapper::create_image(
    uint32_t tex_width,
    uint32_t tex_height,
    uint32_t mip_levels,
+   VkSampleCountFlagBits num_samples,
    VkFormat format,
    VkImageTiling tiling,
    VkBufferUsageFlags usage,
@@ -1589,7 +1653,7 @@ auto vulkan_wrapper::create_image(
       .extent = { static_cast<uint32_t>( tex_width ), static_cast<uint32_t>( tex_height ), 1 },
       .mipLevels = mip_levels,
       .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .samples = num_samples,   // VK_SAMPLE_COUNT_1_BIT,
       .tiling = tiling,
       .usage = usage,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -1938,6 +2002,7 @@ void vulkan_wrapper::create_texture_image()
          tex_width,
          tex_height,
          mip_levels,
+         VK_SAMPLE_COUNT_1_BIT,
          VK_FORMAT_R8G8B8A8_SRGB,
          VK_IMAGE_TILING_OPTIMAL,
          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -2047,6 +2112,7 @@ void vulkan_wrapper::create_depth_resources()
          swapchain_extent.width,
          swapchain_extent.height,
          1,
+         msaa_samples,
          depth_format,
          VK_IMAGE_TILING_OPTIMAL,
          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -2266,4 +2332,22 @@ void vulkan_wrapper::generate_mipmaps(
       MemoryBarriers,
       BufferMemoryBarriers,
       std::span( &barrier, 1 ) );
+}
+
+void vulkan_wrapper::create_color_resources()
+{
+   VkFormat colorFormat = swapchain_image_format;
+
+   std::tie( color_image, color_image_memory ) =
+      create_image(
+         swapchain_extent.width,
+         swapchain_extent.height,
+         1,
+         msaa_samples,
+         colorFormat,
+         VK_IMAGE_TILING_OPTIMAL,
+         VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+
+   color_image_view = create_image_view( *color_image, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1 );
 }
