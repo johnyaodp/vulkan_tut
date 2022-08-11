@@ -715,7 +715,8 @@ void vulkan_wrapper::create_graphics_pipeline()
    VkPipelineMultisampleStateCreateInfo multisampling{
       .sType = get_sType<VkPipelineMultisampleStateCreateInfo>(),
       .rasterizationSamples = msaa_samples,
-      .sampleShadingEnable = VK_FALSE };
+      .sampleShadingEnable = VK_TRUE,
+      .minSampleShading = 0.2f };
 
    // Depthand stencil testing
    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
@@ -916,7 +917,10 @@ void vulkan_wrapper::create_render_pass()
       .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
 
    // Render pass
-   std::array<VkAttachmentDescription, 3> attachments = { color_attachment, depthAttachment, colorAttachmentResolve };
+   std::array<VkAttachmentDescription, 3> attachments = {
+      color_attachment,
+      depthAttachment,
+      colorAttachmentResolve };
 
    VkRenderPassCreateInfo render_pass_info{
       .sType = get_sType<VkRenderPassCreateInfo>(),
@@ -946,7 +950,10 @@ void vulkan_wrapper::create_framebuffers()
    for ( auto& swapchain_image_view : swapchain_image_views )
    {
       // VkImageView attachments[] = { *swapchain_image_view };
-      std::array<VkImageView, 3> attachments = { *color_image_view, *depth_image_view, *swapchain_image_view };
+      std::array<VkImageView, 3> attachments = {
+         *color_image_view,
+         *depth_image_view,
+         *swapchain_image_view };
 
       VkFramebufferCreateInfo framebuffer_info{
          .sType = get_sType<VkFramebufferCreateInfo>(),
