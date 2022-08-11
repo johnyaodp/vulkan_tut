@@ -12,6 +12,10 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
+#pragma warning( disable : 4201 )
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 #include <glm/glm.hpp>
 
 using namespace datapath;
@@ -53,6 +57,10 @@ struct Vertex
    glm::vec3 color;
    glm::vec2 texCoord;
 
+   bool operator==(const Vertex& other) const {
+      return pos == other.pos && color == other.color && texCoord == other.texCoord;
+   }
+
    static
    auto getBindingDescription()
       -> VkVertexInputBindingDescription
@@ -90,6 +98,16 @@ struct Vertex
 
       return attribute_descriptions;
    }
+};
+
+namespace std {
+   template<> struct hash<Vertex> {
+      size_t operator()(Vertex const& vertex) const {
+         return ((hash<glm::vec3>()(vertex.pos) ^
+            (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+            (hash<glm::vec2>()(vertex.texCoord) << 1);
+      }
+   };
 };
 
 struct UniformBufferObject
@@ -310,6 +328,8 @@ private:
    void create_command_pool();
 
    void create_command_buffer();
+
+   void load_model();
 
    // Loading shader
    static

@@ -11,6 +11,7 @@ using namespace datapath;
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 // #include <glm/glm.hpp>
@@ -18,31 +19,22 @@ using namespace datapath;
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <tiny_obj_loader.h>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
+
+//______________________________________________________________________________
 
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-const std::vector<Vertex> vertices = {
-   { { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f } },
-   { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
-   { { 0.5f, 0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
-   { { -0.5f, 0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
-
-   { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f } },
-   { { 0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
-   { { 0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
-   { { -0.5f, 0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } } };
-
-// clang-format off
-const std::vector<uint16_t> g_indices = { 
-   0, 1, 2, 2, 3, 0, 
-   4, 5, 6, 6, 7, 4
-};
-// clang-format on
+std::vector<Vertex> vertices;
+std::vector<uint32_t> g_indices;
 
 // Environment depdent code: Windows
 void vulkan_wrapper::init_window(
@@ -84,6 +76,7 @@ void vulkan_wrapper::init_vulkan(
    create_texture_image();
    create_texture_image_view();
    create_texture_sampler();
+   load_model();
    create_vertex_buffer();
    create_index_buffer();
    create_uniform_buffers();
@@ -676,7 +669,7 @@ void vulkan_wrapper::create_graphics_pipeline()
       .depthClampEnable = VK_FALSE,
       .rasterizerDiscardEnable = VK_FALSE,
       .polygonMode = VK_POLYGON_MODE_FILL,
-      .cullMode = VK_CULL_MODE_BACK_BIT,
+      .cullMode = VK_CULL_MODE_NONE,   // VK_CULL_MODE_BACK_BIT,
       .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
       .depthBiasEnable = VK_FALSE,
       .lineWidth = 1.0f   // NOLINT (readability-uppercase-literal-suffix
@@ -695,11 +688,11 @@ void vulkan_wrapper::create_graphics_pipeline()
    depth_stencil.depthWriteEnable = VK_TRUE;
    depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
    depth_stencil.depthBoundsTestEnable = VK_FALSE;
-   depth_stencil.minDepthBounds = 0.0f; // Optional
-   depth_stencil.maxDepthBounds = 1.0f; // Optional
+   depth_stencil.minDepthBounds = 0.0f;   // Optional
+   depth_stencil.maxDepthBounds = 1.0f;   // Optional
    depth_stencil.stencilTestEnable = VK_FALSE;
-   depth_stencil.front = {}; // Optional
-   depth_stencil.back = {}; // Optional
+   depth_stencil.front = {};   // Optional
+   depth_stencil.back = {};    // Optional
 
    // Color blending
    VkPipelineColorBlendAttachmentState color_blend_attachment{
@@ -1020,7 +1013,7 @@ void vulkan_wrapper::record_command_buffer(
    command_buffer.vkCmdBindIndexBuffer(
       index_buffer.get(),
       0,
-      VK_INDEX_TYPE_UINT16 );
+      VK_INDEX_TYPE_UINT32 );
 
    std::vector<uint32_t> dynamic_offsets{};
 
@@ -1879,8 +1872,15 @@ void vulkan_wrapper::copy_buffer_to_image(
 void vulkan_wrapper::create_texture_image()
 {
    int tex_width, tex_height, tex_channels;
+   // stbi_uc* pixels =
+   //    stbi_load( "textures/texture.jpg", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha );
    stbi_uc* pixels =
-      stbi_load( "textures/texture.jpg", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha );
+      stbi_load(
+         TEXTURE_PATH.c_str(),
+         &tex_width,
+         &tex_height,
+         &tex_channels,
+         STBI_rgb_alpha );
    VkDeviceSize image_size = tex_width * tex_height * 4;
 
    if ( !pixels )
@@ -2075,4 +2075,56 @@ bool vulkan_wrapper::has_stencil_component(
    VkFormat format )
 {
    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+//______________________________________________________________________________
+
+void vulkan_wrapper::load_model()
+{
+   tinyobj::attrib_t attrib;
+   std::vector<tinyobj::shape_t> shapes;
+   std::vector<tinyobj::material_t> materials;
+   std::string warn, err;
+   std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+   if ( !tinyobj::LoadObj(
+           &attrib,
+           &shapes,
+           &materials,
+           &warn,
+           &err,
+           MODEL_PATH.c_str() ) )
+   {
+      throw std::runtime_error( warn + err );
+   }
+
+   //
+   for ( const auto& shape : shapes )
+   {
+      for ( const auto& index : shape.mesh.indices )
+      {
+         Vertex vertex{};
+
+         vertex.pos = {
+            attrib.vertices[3 * index.vertex_index + 0],
+            attrib.vertices[3 * index.vertex_index + 1],
+            attrib.vertices[3 * index.vertex_index + 2] };
+
+         vertex.color = { 1.0f, 1.0f, 1.0f };
+
+         vertex.texCoord = {
+            attrib.texcoords[2 * index.texcoord_index + 0],
+            1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
+
+         // vertices.push_back( vertex );
+         // g_indices.push_back( static_cast<uint32_t>( g_indices.size() ) );
+
+         if ( uniqueVertices.count( vertex ) == 0 )
+         {
+            uniqueVertices[vertex] = static_cast<uint32_t>( vertices.size() );
+            vertices.push_back( vertex );
+         }
+         g_indices.push_back(uniqueVertices[vertex]);
+      }
+   }
 }

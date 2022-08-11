@@ -8,7 +8,7 @@
 
 add_executable(NggTriangle "")
 
-target_compile_options( NggTriangle PRIVATE /wd4458)
+target_compile_options( NggTriangle PRIVATE /wd4458 /DTINYOBJLOADER_IMPLEMENTATION)
 
 target_sources(
    NggTriangle
