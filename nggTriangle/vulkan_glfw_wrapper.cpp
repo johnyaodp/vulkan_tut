@@ -23,7 +23,7 @@ const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-#define VERTEX_ACTIVE 2
+#define VERTEX_ACTIVE 3
 #if VERTEX_ACTIVE == 0
 const std::vector<Vertex> vertices = {
    { { 0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
@@ -40,6 +40,13 @@ const std::vector<Vertex> vertices = {
    { { 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
    { { 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
    { { -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } } };
+#elif VERTEX_ACTIVE == 3
+const std::vector<Vertex> vertices = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+}; 
 #endif
 
 const std::vector<uint16_t> g_indices = { 0, 1, 2, 2, 3, 0 };
