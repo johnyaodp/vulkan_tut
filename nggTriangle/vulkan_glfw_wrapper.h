@@ -20,8 +20,6 @@
 
 using namespace datapath;
 
-extern const bool enableValidationLayers;
-
 void DestroyDebugUtilsMessengerEXT(
    VkInstance instance,
    VkDebugUtilsMessengerEXT debugMessenger,
@@ -117,9 +115,9 @@ struct hash<Vertex>
 
 struct UniformBufferObject
 {
-   glm::mat4 model;
-   glm::mat4 view;
-   glm::mat4 proj;
+   alignas(16) glm::mat4 model;
+   alignas(16) glm::mat4 view;
+   alignas(16) glm::mat4 proj;
 };
 
 
@@ -172,7 +170,7 @@ public:
 
    virtual ~vulkan_wrapper()
    {
-      destroy_window();
+      cleanup();
    }
 
 protected:
@@ -185,38 +183,31 @@ private:
    // Members
    GLFWwindow* window{};
 
-   datapath::VkDebugUtilsMessengerEXT_resource_t debug_messenger;
-
    datapath::vulkan_engine_t vulkan_engine{};
-
    datapath::dispatcher_t initial_dispatcher{ datapath::vulkan_engine_t::initialise_initial_dispatcher() };
 
    datapath::VkSurfaceKHR_resource_t surface;
 
    std::optional<datapath::physical_device_wrapper_t> physical_device;
    std::shared_ptr<const datapath::device_dispatcher_t> logical_device;
-   datapath::VkSwapchainKHR_resource_t swapchain;
 
    std::optional<datapath::queue_wrapper_t> graphics_queue{};
    std::optional<datapath::queue_wrapper_t> present_queue{};
 
+   datapath::VkSwapchainKHR_resource_t swapchain;
    std::vector<VkImage> swapchain_images;
    VkFormat swapchain_image_format{};
    VkExtent2D swapchain_extent{};
-
    std::vector<datapath::VkImageView_resource_t> swapchain_image_views;
-
-   VkDescriptorSetLayout_resource_t descriptor_set_layout;
-   VkPipelineLayout_resource_t pipeline_layout;
-
-   VkRenderPass_resource_t render_pass;
-
-   std::vector<datapath::VkPipeline_resource_t> graphics_pipeline;
-
    std::vector<datapath::VkFramebuffer_resource_t> swapchain_framebuffers;
 
+   VkRenderPass_resource_t render_pass;
+   VkDescriptorSetLayout_resource_t descriptor_set_layout;
+   VkPipelineLayout_resource_t pipeline_layout;
+   std::vector<datapath::VkPipeline_resource_t> graphics_pipeline;
+
    VkCommandPool_resource_shared_t command_pool;
-   std::vector<command_buffer_wrapper_t> command_buffer;
+   std::vector<command_buffer_wrapper_t> command_buffers;
 
    VkBuffer_resource_t vertex_buffer;
    VkDeviceMemory_resource_t vertex_buffer_memory;
@@ -224,6 +215,7 @@ private:
    VkDeviceMemory_resource_t index_buffer_memory;
    std::vector<VkBuffer_resource_t> uniform_buffers;
    std::vector<VkDeviceMemory_resource_t> uniform_buffers_memory;
+
    datapath::VkDescriptorPool_resource_shared_t descriptor_pool;
    datapath::VkDescriptorSet_resource_t descriptor_sets;
 
@@ -248,12 +240,6 @@ private:
    uint32_t current_frame = 0;
 
    bool framebuffer_resized{ false };
-
-#ifdef NDEBUG
-   const bool enableValidationLayers = false;
-#else
-   const bool enableValidationLayers = true;
-#endif
 
    // local functions
 
@@ -318,8 +304,6 @@ private:
 
    void create_logical_device();
 
-   auto check_validation_layer_support()
-      -> bool;
    auto get_required_extensions()
       -> std::vector<const char*>;
 
@@ -473,16 +457,4 @@ private:
       int width,
       int height );
 
-   // Debug messenger
-   void setup_debug_messenger();
-   void destroy_debug_messenger();
-   void populate_debug_messenger_create_info(
-      VkDebugUtilsMessengerCreateInfoEXT& createInfo );
-   static
-   VKAPI_ATTR auto VKAPI_CALL debug_callback(
-      VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-      VkDebugUtilsMessageTypeFlagsEXT messageType,
-      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-      void* pUserData )
-      -> VkBool32;
 };

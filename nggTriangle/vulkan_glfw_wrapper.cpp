@@ -27,7 +27,7 @@ const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 //______________________________________________________________________________
 
-const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+// const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
@@ -58,7 +58,6 @@ void vulkan_wrapper::init_vulkan(
    const char* appname )
 {
    create_instance( appname );
-   setup_debug_messenger();
    create_surface();
    pick_physical_device();
    create_logical_device();
@@ -89,7 +88,7 @@ void vulkan_wrapper::init_vulkan(
 
 void vulkan_wrapper::cleanup()
 {
-   destroy_debug_messenger();
+   // destroy_debug_messenger();
 
    destroy_window();
 }
@@ -108,15 +107,9 @@ void vulkan_wrapper::framebuffer_resize_callback(
 void vulkan_wrapper::create_instance(
    [[maybe_unused]] const char* app_name )
 {
-   if ( enableValidationLayers && !check_validation_layer_support() )
-   {
-      throw std::runtime_error( "validation layers requested, but not available!" );
-   }
-
    std::string application_name( app_name );
-
    vulkan_engine.initialise(
-      application_name,   //"Vulkan Datapath Tutorial", //app_name,
+      application_name,
       VK_MAKE_VERSION( 1, 0, 0 ),
       get_required_instance_extensions() );
 }
@@ -140,7 +133,10 @@ auto vulkan_wrapper::get_required_instance_extensions()
    }
 
    // Add extra instance extension here
-   used_extensions.add_extension( "VK_KHR_surface" );
+   // if ( enableValidationLayers )
+   // {
+   //    used_extensions.add_extension( VK_EXT_DEBUG_UTILS_EXTENSION_NAME );
+   // }
 
    return used_extensions;
 }
@@ -339,22 +335,13 @@ void vulkan_wrapper::create_logical_device()
 
    VkDeviceCreateInfo create_info{
       .sType = get_sType<VkDeviceCreateInfo>(),
-      .queueCreateInfoCount = static_cast<uint32_t>( queue_create_infos.size() ),
+      .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
       .pQueueCreateInfos = queue_create_infos.data(),
       .enabledLayerCount = 0,
-      .enabledExtensionCount = static_cast<uint32_t>( c_device_extensions.size() ),
+      .ppEnabledLayerNames = nullptr,
+      .enabledExtensionCount = static_cast<uint32_t>(c_device_extensions.size()),
       .ppEnabledExtensionNames = c_device_extensions.data(),
       .pEnabledFeatures = &device_features };
-
-   if ( enableValidationLayers )
-   {
-      create_info.enabledLayerCount = static_cast<uint32_t>( validationLayers.size() );
-      create_info.ppEnabledLayerNames = validationLayers.data();
-   }
-   else
-   {
-      create_info.enabledLayerCount = 0;
-   }
 
    auto result = physical_device->vkCreateDevice( create_info );
 
@@ -370,33 +357,6 @@ void vulkan_wrapper::create_logical_device()
    }
 }
 
-auto vulkan_wrapper::check_validation_layer_support()
-   -> bool
-{
-   auto available_layers = initial_dispatcher.vkEnumerateInstanceLayerProperties();
-
-   for ( const char* layerName : validationLayers )
-   {
-      bool layerFound = false;
-
-      for ( const auto& layerProperties : available_layers )
-      {
-         if ( strcmp( layerName, layerProperties.layerName ) == 0 )
-         {
-            layerFound = true;
-            break;
-         }
-      }
-
-      if ( !layerFound )
-      {
-         return false;
-      }
-   }
-
-   return true;
-}
-
 auto vulkan_wrapper::get_required_extensions()
    -> std::vector<const char*>
 {
@@ -406,77 +366,7 @@ auto vulkan_wrapper::get_required_extensions()
 
    std::vector<const char*> extensions( glfwExtensions, glfwExtensions + glfwExtensionCount );
 
-   if ( enableValidationLayers )
-   {
-      extensions.push_back( VK_EXT_DEBUG_UTILS_EXTENSION_NAME );
-   }
-
    return extensions;
-}
-
-VKAPI_ATTR auto VKAPI_CALL vulkan_wrapper::debug_callback(
-   [[maybe_unused]] VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-   [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT messageType,
-   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-   [[maybe_unused]] void* pUserData )
-   -> VkBool32
-{
-   std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-
-   return VK_FALSE;
-}
-
-void vulkan_wrapper::populate_debug_messenger_create_info(
-   VkDebugUtilsMessengerCreateInfoEXT& createInfo )
-{
-   createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-   createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-   createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-   createInfo.pfnUserCallback = debug_callback;
-   createInfo.pUserData = this;   // Optional
-}
-
-void vulkan_wrapper::setup_debug_messenger()
-{
-   if ( !enableValidationLayers )
-   {
-      return;
-   }
-
-   VkDebugUtilsMessengerCreateInfoEXT create_info{};
-   populate_debug_messenger_create_info( create_info );
-
-   auto instance{ vulkan_engine.get_instance_dispatcher() };
-
-
-   auto result = instance->vkCreateDebugUtilsMessengerEXT( create_info );
-
-   if ( result.holds_error() )
-   {
-      throw std::runtime_error( "failed to set up debug messenger!" );
-   }
-   else
-   {
-      debug_messenger = std::move( result ).value();
-   }
-}
-
-void vulkan_wrapper::destroy_debug_messenger()
-{
-   if ( !enableValidationLayers || debug_messenger.empty() )
-   {
-      return;
-   }
-
-   auto instance{ vulkan_engine.get_instance_dispatcher() };
-
-   instance->vkDestroyDebugUtilsMessengerEXT( *debug_messenger );
-
-   debug_messenger.reset();
 }
 
 void vulkan_wrapper::create_swap_chain()
@@ -632,6 +522,7 @@ void vulkan_wrapper::create_image_views()
 
 void vulkan_wrapper::create_graphics_pipeline()
 {
+   // create shaders
    auto vert_shader_code = read_file( "shaders/vert.spv" );
    auto frag_shader_code = read_file( "shaders/frag.spv" );
 
@@ -705,7 +596,7 @@ void vulkan_wrapper::create_graphics_pipeline()
       .depthClampEnable = VK_FALSE,
       .rasterizerDiscardEnable = VK_FALSE,
       .polygonMode = VK_POLYGON_MODE_FILL,
-      .cullMode = VK_CULL_MODE_NONE,   // VK_CULL_MODE_BACK_BIT,
+      .cullMode = VK_CULL_MODE_BACK_BIT,   // VK_CULL_MODE_NONE,   //
       .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
       .depthBiasEnable = VK_FALSE,
       .lineWidth = 1.0f   // NOLINT (readability-uppercase-literal-suffix
@@ -715,7 +606,7 @@ void vulkan_wrapper::create_graphics_pipeline()
    VkPipelineMultisampleStateCreateInfo multisampling{
       .sType = get_sType<VkPipelineMultisampleStateCreateInfo>(),
       .rasterizationSamples = msaa_samples,
-      .sampleShadingEnable = VK_TRUE,
+      .sampleShadingEnable = VK_FALSE,
       .minSampleShading = 0.2f };
 
    // Depthand stencil testing
@@ -1008,7 +899,7 @@ void vulkan_wrapper::create_command_buffer()
    {
       throw std::runtime_error( "failed to allocate command buffers!" );
    }
-   command_buffer = std::move( command_buffer_result ).value();
+   command_buffers = std::move( command_buffer_result ).value();
 }
 
 void vulkan_wrapper::record_command_buffer(
@@ -1161,16 +1052,16 @@ void vulkan_wrapper::draw_frame()
    }
 
    // Record a command buffer which draws the scene onto that image
-   if ( command_buffer[current_frame].vkResetCommandBuffer( 0 ) != VK_SUCCESS )
+   if ( command_buffers[current_frame].vkResetCommandBuffer( 0 ) != VK_SUCCESS )
    {
       throw std::runtime_error( "failed to reset command buffer!" );
    }
 
-   record_command_buffer( command_buffer[current_frame], image_index );
+   record_command_buffer( command_buffers[current_frame], image_index );
 
    // Submit the recorded command buffer
    std::array<VkPipelineStageFlags, 1> waitStages{ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-   auto cmd_buffer_handle = command_buffer[current_frame].handle();
+   auto cmd_buffer_handle = command_buffers[current_frame].handle();
 
    VkSubmitInfo submit_info{
       .sType = get_sType<VkSubmitInfo>(),
@@ -1315,7 +1206,7 @@ void vulkan_wrapper::create_vertex_buffer()
 
 void vulkan_wrapper::create_index_buffer()
 {
-   VkDeviceSize buffer_size = sizeof( uint16_t ) * g_indices.size();
+   VkDeviceSize buffer_size = sizeof( g_indices[0] ) * g_indices.size();
 
    VkBuffer_resource_t staging_buffer;
    VkDeviceMemory_resource_t staging_buffer_memory;
@@ -1562,6 +1453,7 @@ void vulkan_wrapper::create_descriptor_pool()
 
    VkDescriptorPoolCreateInfo pool_info{
       .sType = get_sType<VkDescriptorPoolCreateInfo>(),
+      .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
       .maxSets = static_cast<uint32_t>( max_frames_in_flight ),
       .poolSizeCount = static_cast<uint32_t>( poolSizes.size() ),
       .pPoolSizes = poolSizes.data() };
@@ -2005,7 +1897,7 @@ void vulkan_wrapper::create_texture_image()
          VK_SAMPLE_COUNT_1_BIT,
          VK_FORMAT_R8G8B8A8_SRGB,
          VK_IMAGE_TILING_OPTIMAL,
-         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
    transition_image_layout(
@@ -2021,12 +1913,12 @@ void vulkan_wrapper::create_texture_image()
       static_cast<uint32_t>( tex_width ),
       static_cast<uint32_t>( tex_height ) );
 
-   transition_image_layout(
-      texture_image.get(),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-      mip_levels );
+   // transition_image_layout(
+   //    texture_image.get(),
+   //    VK_FORMAT_R8G8B8A8_SRGB,
+   //    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+   //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+   //    mip_levels );
 
    //
    generate_mipmaps( *texture_image, VK_FORMAT_R8G8B8A8_SRGB, tex_width, tex_height, mip_levels );
@@ -2180,7 +2072,6 @@ void vulkan_wrapper::load_model()
    std::vector<tinyobj::shape_t> shapes;
    std::vector<tinyobj::material_t> materials;
    std::string warn, err;
-   std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
    if ( !tinyobj::LoadObj(
            &attrib,
@@ -2192,6 +2083,10 @@ void vulkan_wrapper::load_model()
    {
       throw std::runtime_error( warn + err );
    }
+
+   g_indices.clear();
+   vertices.clear();
+   std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
    //
    for ( const auto& shape : shapes )
@@ -2205,20 +2100,18 @@ void vulkan_wrapper::load_model()
             attrib.vertices[3 * index.vertex_index + 1],
             attrib.vertices[3 * index.vertex_index + 2] };
 
-         vertex.color = { 1.0f, 1.0f, 1.0f };
-
          vertex.texCoord = {
             attrib.texcoords[2 * index.texcoord_index + 0],
             1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
 
-         // vertices.push_back( vertex );
-         // g_indices.push_back( static_cast<uint32_t>( g_indices.size() ) );
+         vertex.color = { 1.0f, 1.0f, 1.0f };
 
          if ( uniqueVertices.count( vertex ) == 0 )
          {
             uniqueVertices[vertex] = static_cast<uint32_t>( vertices.size() );
             vertices.push_back( vertex );
          }
+
          g_indices.push_back( uniqueVertices[vertex] );
       }
    }
@@ -2242,7 +2135,7 @@ void vulkan_wrapper::generate_mipmaps(
    single_time_command_t command_buffer( *this );
 
    VkImageMemoryBarrier barrier{};
-   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+   barrier.sType = get_sType<VkImageMemoryBarrier>();
    barrier.image = image;
    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
