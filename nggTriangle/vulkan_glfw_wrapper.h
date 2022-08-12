@@ -117,9 +117,9 @@ struct hash<Vertex>
 
 struct UniformBufferObject
 {
-   glm::mat4 model;
-   glm::mat4 view;
-   glm::mat4 proj;
+   alignas(16) glm::mat4 model;
+   alignas(16) glm::mat4 view;
+   alignas(16) glm::mat4 proj;
 };
 
 
@@ -188,35 +188,30 @@ private:
    datapath::VkDebugUtilsMessengerEXT_resource_t debug_messenger;
 
    datapath::vulkan_engine_t vulkan_engine{};
-
    datapath::dispatcher_t initial_dispatcher{ datapath::vulkan_engine_t::initialise_initial_dispatcher() };
 
    datapath::VkSurfaceKHR_resource_t surface;
 
    std::optional<datapath::physical_device_wrapper_t> physical_device;
    std::shared_ptr<const datapath::device_dispatcher_t> logical_device;
-   datapath::VkSwapchainKHR_resource_t swapchain;
 
    std::optional<datapath::queue_wrapper_t> graphics_queue{};
    std::optional<datapath::queue_wrapper_t> present_queue{};
 
+   datapath::VkSwapchainKHR_resource_t swapchain;
    std::vector<VkImage> swapchain_images;
    VkFormat swapchain_image_format{};
    VkExtent2D swapchain_extent{};
-
    std::vector<datapath::VkImageView_resource_t> swapchain_image_views;
-
-   VkDescriptorSetLayout_resource_t descriptor_set_layout;
-   VkPipelineLayout_resource_t pipeline_layout;
-
-   VkRenderPass_resource_t render_pass;
-
-   std::vector<datapath::VkPipeline_resource_t> graphics_pipeline;
-
    std::vector<datapath::VkFramebuffer_resource_t> swapchain_framebuffers;
 
+   VkRenderPass_resource_t render_pass;
+   VkDescriptorSetLayout_resource_t descriptor_set_layout;
+   VkPipelineLayout_resource_t pipeline_layout;
+   std::vector<datapath::VkPipeline_resource_t> graphics_pipeline;
+
    VkCommandPool_resource_shared_t command_pool;
-   std::vector<command_buffer_wrapper_t> command_buffer;
+   std::vector<command_buffer_wrapper_t> command_buffers;
 
    VkBuffer_resource_t vertex_buffer;
    VkDeviceMemory_resource_t vertex_buffer_memory;

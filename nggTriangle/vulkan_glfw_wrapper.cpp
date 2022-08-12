@@ -1009,7 +1009,7 @@ void vulkan_wrapper::create_command_buffer()
    {
       throw std::runtime_error( "failed to allocate command buffers!" );
    }
-   command_buffer = std::move( command_buffer_result ).value();
+   command_buffers = std::move( command_buffer_result ).value();
 }
 
 void vulkan_wrapper::record_command_buffer(
@@ -1162,16 +1162,16 @@ void vulkan_wrapper::draw_frame()
    }
 
    // Record a command buffer which draws the scene onto that image
-   if ( command_buffer[current_frame].vkResetCommandBuffer( 0 ) != VK_SUCCESS )
+   if ( command_buffers[current_frame].vkResetCommandBuffer( 0 ) != VK_SUCCESS )
    {
       throw std::runtime_error( "failed to reset command buffer!" );
    }
 
-   record_command_buffer( command_buffer[current_frame], image_index );
+   record_command_buffer( command_buffers[current_frame], image_index );
 
    // Submit the recorded command buffer
    std::array<VkPipelineStageFlags, 1> waitStages{ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-   auto cmd_buffer_handle = command_buffer[current_frame].handle();
+   auto cmd_buffer_handle = command_buffers[current_frame].handle();
 
    VkSubmitInfo submit_info{
       .sType = get_sType<VkSubmitInfo>(),
