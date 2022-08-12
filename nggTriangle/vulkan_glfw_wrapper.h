@@ -20,8 +20,6 @@
 
 using namespace datapath;
 
-extern const bool enableValidationLayers;
-
 void DestroyDebugUtilsMessengerEXT(
    VkInstance instance,
    VkDebugUtilsMessengerEXT debugMessenger,
@@ -172,7 +170,7 @@ public:
 
    virtual ~vulkan_wrapper()
    {
-      destroy_window();
+      cleanup();
    }
 
 protected:
@@ -184,8 +182,6 @@ private:
 
    // Members
    GLFWwindow* window{};
-
-   datapath::VkDebugUtilsMessengerEXT_resource_t debug_messenger;
 
    datapath::vulkan_engine_t vulkan_engine{};
    datapath::dispatcher_t initial_dispatcher{ datapath::vulkan_engine_t::initialise_initial_dispatcher() };
@@ -243,12 +239,6 @@ private:
    uint32_t current_frame = 0;
 
    bool framebuffer_resized{ false };
-
-#ifdef NDEBUG
-   const bool enableValidationLayers = false;
-#else
-   const bool enableValidationLayers = true;
-#endif
 
    // local functions
 
@@ -313,8 +303,6 @@ private:
 
    void create_logical_device();
 
-   auto check_validation_layer_support()
-      -> bool;
    auto get_required_extensions()
       -> std::vector<const char*>;
 
@@ -468,16 +456,4 @@ private:
       int width,
       int height );
 
-   // Debug messenger
-   void setup_debug_messenger();
-   void destroy_debug_messenger();
-   void populate_debug_messenger_create_info(
-      VkDebugUtilsMessengerCreateInfoEXT& createInfo );
-   static
-   VKAPI_ATTR auto VKAPI_CALL debug_callback(
-      VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-      VkDebugUtilsMessageTypeFlagsEXT messageType,
-      const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-      void* pUserData )
-      -> VkBool32;
 };

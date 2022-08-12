@@ -27,7 +27,7 @@ const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 //______________________________________________________________________________
 
-const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+// const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
 const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
@@ -58,7 +58,6 @@ void vulkan_wrapper::init_vulkan(
    const char* appname )
 {
    create_instance( appname );
-   setup_debug_messenger();
    create_surface();
    pick_physical_device();
    create_logical_device();
@@ -89,7 +88,7 @@ void vulkan_wrapper::init_vulkan(
 
 void vulkan_wrapper::cleanup()
 {
-   destroy_debug_messenger();
+   // destroy_debug_messenger();
 
    destroy_window();
 }
@@ -108,15 +107,9 @@ void vulkan_wrapper::framebuffer_resize_callback(
 void vulkan_wrapper::create_instance(
    [[maybe_unused]] const char* app_name )
 {
-   if ( enableValidationLayers && !check_validation_layer_support() )
-   {
-      throw std::runtime_error( "validation layers requested, but not available!" );
-   }
-
    std::string application_name( app_name );
-
    vulkan_engine.initialise(
-      application_name,   //"Vulkan Datapath Tutorial", //app_name,
+      application_name,
       VK_MAKE_VERSION( 1, 0, 0 ),
       get_required_instance_extensions() );
 }
@@ -140,7 +133,10 @@ auto vulkan_wrapper::get_required_instance_extensions()
    }
 
    // Add extra instance extension here
-   used_extensions.add_extension( "VK_KHR_surface" );
+   // if ( enableValidationLayers )
+   // {
+   //    used_extensions.add_extension( VK_EXT_DEBUG_UTILS_EXTENSION_NAME );
+   // }
 
    return used_extensions;
 }
@@ -339,22 +335,13 @@ void vulkan_wrapper::create_logical_device()
 
    VkDeviceCreateInfo create_info{
       .sType = get_sType<VkDeviceCreateInfo>(),
-      .queueCreateInfoCount = static_cast<uint32_t>( queue_create_infos.size() ),
+      .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
       .pQueueCreateInfos = queue_create_infos.data(),
       .enabledLayerCount = 0,
-      .enabledExtensionCount = static_cast<uint32_t>( c_device_extensions.size() ),
+      .ppEnabledLayerNames = nullptr,
+      .enabledExtensionCount = static_cast<uint32_t>(c_device_extensions.size()),
       .ppEnabledExtensionNames = c_device_extensions.data(),
       .pEnabledFeatures = &device_features };
-
-   if ( enableValidationLayers )
-   {
-      create_info.enabledLayerCount = static_cast<uint32_t>( validationLayers.size() );
-      create_info.ppEnabledLayerNames = validationLayers.data();
-   }
-   else
-   {
-      create_info.enabledLayerCount = 0;
-   }
 
    auto result = physical_device->vkCreateDevice( create_info );
 
@@ -370,33 +357,6 @@ void vulkan_wrapper::create_logical_device()
    }
 }
 
-auto vulkan_wrapper::check_validation_layer_support()
-   -> bool
-{
-   auto available_layers = initial_dispatcher.vkEnumerateInstanceLayerProperties();
-
-   for ( const char* layerName : validationLayers )
-   {
-      bool layerFound = false;
-
-      for ( const auto& layerProperties : available_layers )
-      {
-         if ( strcmp( layerName, layerProperties.layerName ) == 0 )
-         {
-            layerFound = true;
-            break;
-         }
-      }
-
-      if ( !layerFound )
-      {
-         return false;
-      }
-   }
-
-   return true;
-}
-
 auto vulkan_wrapper::get_required_extensions()
    -> std::vector<const char*>
 {
@@ -406,77 +366,7 @@ auto vulkan_wrapper::get_required_extensions()
 
    std::vector<const char*> extensions( glfwExtensions, glfwExtensions + glfwExtensionCount );
 
-   if ( enableValidationLayers )
-   {
-      extensions.push_back( VK_EXT_DEBUG_UTILS_EXTENSION_NAME );
-   }
-
    return extensions;
-}
-
-VKAPI_ATTR auto VKAPI_CALL vulkan_wrapper::debug_callback(
-   [[maybe_unused]] VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-   [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT messageType,
-   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-   [[maybe_unused]] void* pUserData )
-   -> VkBool32
-{
-   std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-
-   return VK_FALSE;
-}
-
-void vulkan_wrapper::populate_debug_messenger_create_info(
-   VkDebugUtilsMessengerCreateInfoEXT& createInfo )
-{
-   createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-   createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-   createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-   createInfo.pfnUserCallback = debug_callback;
-   createInfo.pUserData = this;   // Optional
-}
-
-void vulkan_wrapper::setup_debug_messenger()
-{
-   if ( !enableValidationLayers )
-   {
-      return;
-   }
-
-   VkDebugUtilsMessengerCreateInfoEXT create_info{};
-   populate_debug_messenger_create_info( create_info );
-
-   auto instance{ vulkan_engine.get_instance_dispatcher() };
-
-
-   auto result = instance->vkCreateDebugUtilsMessengerEXT( create_info );
-
-   if ( result.holds_error() )
-   {
-      throw std::runtime_error( "failed to set up debug messenger!" );
-   }
-   else
-   {
-      debug_messenger = std::move( result ).value();
-   }
-}
-
-void vulkan_wrapper::destroy_debug_messenger()
-{
-   if ( !enableValidationLayers || debug_messenger.empty() )
-   {
-      return;
-   }
-
-   auto instance{ vulkan_engine.get_instance_dispatcher() };
-
-   instance->vkDestroyDebugUtilsMessengerEXT( *debug_messenger );
-
-   debug_messenger.reset();
 }
 
 void vulkan_wrapper::create_swap_chain()
