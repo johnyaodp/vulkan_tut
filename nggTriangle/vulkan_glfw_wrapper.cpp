@@ -2022,12 +2022,12 @@ void vulkan_wrapper::create_texture_image()
       static_cast<uint32_t>( tex_width ),
       static_cast<uint32_t>( tex_height ) );
 
-   transition_image_layout(
-      texture_image.get(),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-      mip_levels );
+   // transition_image_layout(
+   //    texture_image.get(),
+   //    VK_FORMAT_R8G8B8A8_SRGB,
+   //    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+   //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+   //    mip_levels );
 
    //
    generate_mipmaps( *texture_image, VK_FORMAT_R8G8B8A8_SRGB, tex_width, tex_height, mip_levels );
