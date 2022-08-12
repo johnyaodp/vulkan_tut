@@ -215,6 +215,7 @@ private:
    VkDeviceMemory_resource_t index_buffer_memory;
    std::vector<VkBuffer_resource_t> uniform_buffers;
    std::vector<VkDeviceMemory_resource_t> uniform_buffers_memory;
+
    datapath::VkDescriptorPool_resource_shared_t descriptor_pool;
    datapath::VkDescriptorSet_resource_t descriptor_sets;
 

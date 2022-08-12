@@ -1453,6 +1453,7 @@ void vulkan_wrapper::create_descriptor_pool()
 
    VkDescriptorPoolCreateInfo pool_info{
       .sType = get_sType<VkDescriptorPoolCreateInfo>(),
+      .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
       .maxSets = static_cast<uint32_t>( max_frames_in_flight ),
       .poolSizeCount = static_cast<uint32_t>( poolSizes.size() ),
       .pPoolSizes = poolSizes.data() };
