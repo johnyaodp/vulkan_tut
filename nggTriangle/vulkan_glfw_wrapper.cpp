@@ -706,7 +706,7 @@ void vulkan_wrapper::create_graphics_pipeline()
       .depthClampEnable = VK_FALSE,
       .rasterizerDiscardEnable = VK_FALSE,
       .polygonMode = VK_POLYGON_MODE_FILL,
-      .cullMode = VK_CULL_MODE_NONE,   // VK_CULL_MODE_BACK_BIT,
+      .cullMode = VK_CULL_MODE_BACK_BIT,   // VK_CULL_MODE_NONE,   //
       .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
       .depthBiasEnable = VK_FALSE,
       .lineWidth = 1.0f   // NOLINT (readability-uppercase-literal-suffix
@@ -1316,7 +1316,7 @@ void vulkan_wrapper::create_vertex_buffer()
 
 void vulkan_wrapper::create_index_buffer()
 {
-   VkDeviceSize buffer_size = sizeof( uint16_t ) * g_indices.size();
+   VkDeviceSize buffer_size = sizeof( g_indices[0] ) * g_indices.size();
 
    VkBuffer_resource_t staging_buffer;
    VkDeviceMemory_resource_t staging_buffer_memory;
