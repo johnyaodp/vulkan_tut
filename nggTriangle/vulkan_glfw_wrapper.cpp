@@ -632,6 +632,7 @@ void vulkan_wrapper::create_image_views()
 
 void vulkan_wrapper::create_graphics_pipeline()
 {
+   // create shaders
    auto vert_shader_code = read_file( "shaders/vert.spv" );
    auto frag_shader_code = read_file( "shaders/frag.spv" );
 
@@ -715,7 +716,7 @@ void vulkan_wrapper::create_graphics_pipeline()
    VkPipelineMultisampleStateCreateInfo multisampling{
       .sType = get_sType<VkPipelineMultisampleStateCreateInfo>(),
       .rasterizationSamples = msaa_samples,
-      .sampleShadingEnable = VK_TRUE,
+      .sampleShadingEnable = VK_FALSE,
       .minSampleShading = 0.2f };
 
    // Depthand stencil testing
@@ -2005,7 +2006,7 @@ void vulkan_wrapper::create_texture_image()
          VK_SAMPLE_COUNT_1_BIT,
          VK_FORMAT_R8G8B8A8_SRGB,
          VK_IMAGE_TILING_OPTIMAL,
-         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
    transition_image_layout(
@@ -2180,7 +2181,6 @@ void vulkan_wrapper::load_model()
    std::vector<tinyobj::shape_t> shapes;
    std::vector<tinyobj::material_t> materials;
    std::string warn, err;
-   std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
    if ( !tinyobj::LoadObj(
            &attrib,
@@ -2192,6 +2192,10 @@ void vulkan_wrapper::load_model()
    {
       throw std::runtime_error( warn + err );
    }
+
+   g_indices.clear();
+   vertices.clear();
+   std::unordered_map<Vertex, uint32_t> uniqueVertices{};
 
    //
    for ( const auto& shape : shapes )
@@ -2205,20 +2209,18 @@ void vulkan_wrapper::load_model()
             attrib.vertices[3 * index.vertex_index + 1],
             attrib.vertices[3 * index.vertex_index + 2] };
 
-         vertex.color = { 1.0f, 1.0f, 1.0f };
-
          vertex.texCoord = {
             attrib.texcoords[2 * index.texcoord_index + 0],
             1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
 
-         // vertices.push_back( vertex );
-         // g_indices.push_back( static_cast<uint32_t>( g_indices.size() ) );
+         vertex.color = { 1.0f, 1.0f, 1.0f };
 
          if ( uniqueVertices.count( vertex ) == 0 )
          {
             uniqueVertices[vertex] = static_cast<uint32_t>( vertices.size() );
             vertices.push_back( vertex );
          }
+
          g_indices.push_back( uniqueVertices[vertex] );
       }
    }
@@ -2242,7 +2244,7 @@ void vulkan_wrapper::generate_mipmaps(
    single_time_command_t command_buffer( *this );
 
    VkImageMemoryBarrier barrier{};
-   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+   barrier.sType = get_sType<VkImageMemoryBarrier>();
    barrier.image = image;
    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
